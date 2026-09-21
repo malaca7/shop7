@@ -1,0 +1,224 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * SHOP7 Design System — Super Dark & Premium Lime Accent
+ * Proporções fluidas em porcentagem (%), visual nativo de aplicativo
+ * Tema focado em preto absoluto, grafite escuro e detalhes selecionados em degradê verde limão
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 14px);
+  --radius-full: 9999px;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ring-offset-background: var(--background);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Plus Jakarta Sans", sans-serif;
+}
+
+:root {
+  --radius: 0.875rem;
+
+  /* Super Dark Absolute Black & Charcoal Palette */
+  --background: oklch(0.09 0.002 140);
+  --foreground: oklch(0.985 0.003 120);
+  --surface: oklch(0.125 0.005 140);
+  --surface-2: oklch(0.165 0.008 140);
+
+  --card: oklch(0.12 0.005 140);
+  --card-foreground: oklch(0.985 0.003 120);
+  --popover: oklch(0.13 0.005 140);
+  --popover-foreground: oklch(0.985 0.003 120);
+
+  /* Vibrant Lime Green from Logo */
+  --primary: oklch(0.86 0.22 130);
+  --primary-foreground: oklch(0.08 0.01 130);
+
+  --secondary: oklch(0.18 0.008 140);
+  --secondary-foreground: oklch(0.95 0.006 120);
+
+  --muted: oklch(0.16 0.006 140);
+  --muted-foreground: oklch(0.68 0.012 135);
+
+  --accent: oklch(0.2 0.015 135);
+  --accent-foreground: oklch(0.98 0.01 125);
+
+  --destructive: oklch(0.58 0.22 22);
+  --destructive-foreground: oklch(0.98 0.01 90);
+  --success: oklch(0.82 0.2 138);
+  --success-foreground: oklch(0.1 0.02 138);
+  --warning: oklch(0.83 0.16 85);
+  --warning-foreground: oklch(0.14 0.02 85);
+
+  --border: oklch(1 0 0 / 6%);
+  --border-strong: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 8%);
+  --ring: oklch(0.86 0.22 130);
+
+  --sidebar: oklch(0.11 0.005 140);
+  --sidebar-foreground: oklch(0.95 0.006 120);
+  --sidebar-primary: oklch(0.86 0.22 130);
+  --sidebar-primary-foreground: oklch(0.08 0.01 130);
+  --sidebar-accent: oklch(0.17 0.008 140);
+  --sidebar-accent-foreground: oklch(0.95 0.006 120);
+  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-ring: oklch(0.86 0.22 130);
+
+  --gradient-lime: linear-gradient(
+    135deg,
+    #a3e635 0%,
+    #84cc16 50%,
+    #4d7c0f 100%
+  );
+  --gradient-lime-subtle: linear-gradient(
+    135deg,
+    rgba(163, 230, 53, 0.15) 0%,
+    rgba(132, 204, 22, 0.05) 100%
+  );
+  --gradient-surface: linear-gradient(
+    180deg,
+    rgba(22, 24, 29, 0.85) 0%,
+    rgba(13, 14, 18, 0.98) 100%
+  );
+  --shadow-deep: 0 20px 50px -20px rgba(0, 0, 0, 0.9);
+  --shadow-glow: 0 0 28px -4px rgba(132, 204, 22, 0.35);
+  --shadow-glow-sm: 0 0 12px -2px rgba(132, 204, 22, 0.2);
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+    background-color: var(--color-background);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgba(132, 204, 22, 0.25);
+    color: #ffffff;
+  }
+}
+
+@utility gradient-lime {
+  background-image: var(--gradient-lime);
+}
+
+@utility gradient-lime-subtle {
+  background-image: var(--gradient-lime-subtle);
+}
+
+@utility text-gradient-lime {
+  background-image: var(--gradient-lime);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+@utility surface-panel {
+  background-image: var(--gradient-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-deep);
+}
+
+@utility glow-lime {
+  box-shadow: var(--shadow-glow);
+}
+
+@utility glow-lime-sm {
+  box-shadow: var(--shadow-glow-sm);
+}
+
+@utility hide-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Fluid Percentage Layout Utilities */
+@utility fluid-container {
+  width: 94%;
+  max-width: 1480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@utility fluid-container-wide {
+  width: 96%;
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}

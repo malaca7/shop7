@@ -154,8 +154,8 @@ export const AdsService = {
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
       if (error) {
-        console.error("Erro ao carregar meus anúncios do Supabase:", error);
-        return [];
+        console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+        return getLocalAds().filter((a) => a.user_id === userId);
       }
       return data || [];
     }
@@ -171,8 +171,8 @@ export const AdsService = {
         .eq("status", "pending")
         .order("created_at", { ascending: false });
       if (error) {
-        console.error("Erro ao carregar pendentes do Supabase:", error);
-        return [];
+        console.warn("Supabase pending ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+        return getLocalAds().filter((a) => a.status === "pending");
       }
       return data || [];
     }
@@ -186,8 +186,9 @@ export const AdsService = {
       if (statusFilter) query = query.eq("status", statusFilter);
       const { data, error } = await query;
       if (error) {
-        console.error("Erro ao carregar todos os anúncios:", error);
-        return [];
+        console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+        const all = getLocalAds();
+        return statusFilter ? all.filter((a) => a.status === statusFilter) : all;
       }
       return data || [];
     }
@@ -210,9 +211,13 @@ export const AdsService = {
     };
 
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase.from("ads").insert([payload]).select().single();
-      if (error) throw new Error(error.message);
-      return data;
+      try {
+        const { data, error } = await supabase.from("ads").insert([payload]).select().single();
+        if (!error && data) return data;
+        console.warn("Falha ao inserir no Supabase (verifique se executou supabase/schema.sql no SQL Editor):", error?.message);
+      } catch (e: any) {
+        console.warn("Exceção no Supabase insert:", e.message);
+      }
     }
 
     const newAd: Ad = {
@@ -328,8 +333,8 @@ export const AdsService = {
     if (isLiveSupabaseConfigured) {
       const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
       if (error) {
-        console.error("Erro ao listar perfis:", error);
-        return [];
+        console.warn("Supabase profiles indisponível ou tabela ainda não criada, usando fallback:", error.message);
+        return getLocalProfiles();
       }
       return data || [];
     }

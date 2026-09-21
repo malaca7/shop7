@@ -232,14 +232,28 @@ function AuthPage() {
                 <span>Continuar com o Google</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowOAuthHelpModal(true)}
-                className="w-full text-center text-[11px] text-muted-foreground/80 hover:text-primary transition-colors flex items-center justify-center gap-1 py-1"
-              >
-                <HelpCircle className="size-3" />
-                <span>Instruções para configurar Google OAuth</span>
-              </button>
+              {/* Banner informativo sobre redirect_uri_mismatch */}
+              <div className="rounded-2xl border border-yellow-500/25 bg-yellow-500/[0.06] p-3 text-left">
+                <div className="flex items-start gap-2 text-yellow-400">
+                  <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-yellow-300">
+                      Aviso sobre erro no Google (redirect_uri_mismatch):
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                      Para o Google autorizar o login, o URI de callback do Supabase deve ser cadastrado no seu Google Cloud Console.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowOAuthHelpModal(true)}
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                    >
+                      <HelpCircle className="size-3.5" />
+                      <span>Ver URI de Callback para Copiar (Passo a Passo)</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="relative my-5 flex items-center justify-center">
@@ -375,14 +389,28 @@ function AuthPage() {
 
               {/* Passo 1 */}
               <div className="rounded-2xl border border-white/[0.06] bg-[#14151b] p-4">
-                <span className="font-bold text-foreground text-xs block mb-1">
-                  1. No Google Cloud Console (console.cloud.google.com):
-                </span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-foreground text-xs">
+                    1. No Google Cloud Console:
+                  </span>
+                  <a
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline font-semibold"
+                  >
+                    <span>Abrir Credenciais Google</span>
+                    <ExternalLink className="size-3" />
+                  </a>
+                </div>
                 <p className="text-[11px] mb-2">
-                  Vá em <strong>APIs e Serviços</strong> &gt; <strong>Credenciais</strong> &gt; Clique no seu <strong>ID do cliente OAuth 2.0</strong>.
+                  Acesse com a conta <strong>rogeriosantanajr@gmail.com</strong> e edite o ID do cliente:
+                  <code className="block mt-1 font-mono text-[10px] text-muted-foreground/90 bg-black/40 p-1 rounded">
+                    636848592961-1jg2mu7ifjq4f5hb9o2f52ucjd5eft8c.apps.googleusercontent.com
+                  </code>
                 </p>
                 <p className="text-[11px] mb-2">
-                  No campo <strong>"URIs de redirecionamento autorizados"</strong>, adicione exatamente:
+                  No campo <strong>"URIs de redirecionamento autorizados"</strong>, adicione exatamente este link:
                 </p>
                 <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 p-2.5">
                   <code className="flex-1 font-mono text-[11px] text-primary truncate">

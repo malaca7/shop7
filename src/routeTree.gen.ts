@@ -10,33 +10,63 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as MinhaContaRouteImport } from './routes/minha-conta'
+import { Route as ModeracaoRouteImport } from './routes/moderacao'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MinhaContaRoute = MinhaContaRouteImport.update({
+  id: '/minha-conta',
+  path: '/minha-conta',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModeracaoRoute = ModeracaoRouteImport.update({
+  id: '/moderacao',
+  path: '/moderacao',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/minha-conta': typeof MinhaContaRoute
+  '/moderacao': typeof ModeracaoRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/minha-conta': typeof MinhaContaRoute
+  '/moderacao': typeof ModeracaoRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/minha-conta': typeof MinhaContaRoute
+  '/moderacao': typeof ModeracaoRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/auth' | '/minha-conta' | '/moderacao'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/auth' | '/minha-conta' | '/moderacao'
+  id: '__root__' | '/' | '/auth' | '/minha-conta' | '/moderacao'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
+  MinhaContaRoute: typeof MinhaContaRoute
+  ModeracaoRoute: typeof ModeracaoRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +78,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/minha-conta': {
+      id: '/minha-conta'
+      path: '/minha-conta'
+      fullPath: '/minha-conta'
+      preLoaderRoute: typeof MinhaContaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/moderacao': {
+      id: '/moderacao'
+      path: '/moderacao'
+      fullPath: '/moderacao'
+      preLoaderRoute: typeof ModeracaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
+  MinhaContaRoute: MinhaContaRoute,
+  ModeracaoRoute: ModeracaoRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

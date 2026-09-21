@@ -6,7 +6,9 @@ import {
   User,
 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface MobileBottomNavProps {
   activeTab?: string;
@@ -20,10 +22,37 @@ export function MobileBottomNav({
   cartCount = 2,
 }: MobileBottomNavProps) {
   const [current, setCurrent] = useState(activeTab);
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   const handleSelect = (tab: string, href?: string) => {
     setCurrent(tab);
     onTabChange?.(tab);
+
+    if (tab === "home") {
+      navigate({ to: "/" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (tab === "sell") {
+      if (user) {
+        navigate({ to: "/minha-conta" });
+      } else {
+        navigate({ to: "/auth" });
+      }
+      return;
+    }
+
+    if (tab === "profile") {
+      if (user) {
+        navigate({ to: "/minha-conta" });
+      } else {
+        navigate({ to: "/auth" });
+      }
+      return;
+    }
+
     if (href) {
       const el = document.querySelector(href);
       if (el) {
@@ -67,7 +96,7 @@ export function MobileBottomNav({
           type="button"
           onClick={() => handleSelect("sell")}
           className="group relative -top-3 flex flex-col items-center gap-1"
-          aria-label="Anunciar produto"
+          aria-label="Anunciar produto ou serviço"
         >
           <div className="gradient-lime grid size-12 place-items-center rounded-full text-primary-foreground shadow-[0_4px_18px_rgba(132,204,22,0.45)] transition-transform group-hover:scale-105 active:scale-95">
             <Plus className="size-6 stroke-[2.5]" />

@@ -22,14 +22,16 @@ import {
   Wallet,
   Wrench,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { ProductCard } from "@/components/marketplace/ProductCard";
+import { AdsService } from "@/lib/ads-service";
+import type { Ad } from "@/lib/supabase";
 import {
   BEST_SELLERS,
   CATEGORIES,
@@ -71,14 +73,52 @@ function HomePage() {
   const [activeTab, setActiveTab] = useState<"featured" | "bestsellers" | "services">("featured");
   const [searchFilter, setSearchFilter] = useState<string>("");
 
+  const [approvedAds, setApprovedAds] = useState<Ad[]>([]);
+
+  useEffect(() => {
+    async function loadApproved() {
+      try {
+        const ads = await AdsService.getApprovedAds();
+        setApprovedAds(ads);
+      } catch (e) {
+        console.error("Erro ao carregar anúncios aprovados:", e);
+      }
+    }
+    loadApproved();
+  }, []);
+
   // Filter products by selected category and search query
   const displayedProducts = useMemo(() => {
     let list: Product[] = [];
-    if (activeTab === "featured") list = FEATURED_PRODUCTS;
-    else if (activeTab === "bestsellers") list = BEST_SELLERS;
-    else if (activeTab === "services") list = SERVICES;
+    if (activeTab === "featured") list = [...FEATURED_PRODUCTS];
+    else if (activeTab === "bestsellers") list = [...BEST_SELLERS];
+    else if (activeTab === "services") list = [...SERVICES];
 
-    return list.filter((p) => {
+    // Converter anúncios aprovados de usuários para exibição pública
+    const userProducts: Product[] = approvedAds.map((ad) => ({
+      id: ad.id,
+      title: ad.title,
+      slug: ad.id,
+      categorySlug: ad.category,
+      productType: ad.type === "servico" ? "servico" : "digital",
+      price: ad.price,
+      rating: 5.0,
+      reviews: 1,
+      sales: 0,
+      stock: ad.stock,
+      seller: ad.seller_name || "Anunciante Verificado",
+      sellerVerified: true,
+      deliveryLabel: ad.type === "servico" ? "Sob Demanda" : "Entrega Protegida",
+      accent: "from-lime-500/20 to-emerald-950/40",
+    }));
+
+    // Se estiver em serviços, prioriza anúncios de serviço
+    const combined =
+      activeTab === "services"
+        ? [...userProducts.filter((u) => u.productType === "servico"), ...list]
+        : [...userProducts, ...list];
+
+    return combined.filter((p) => {
       const matchesCategory =
         selectedCategory === "all" || p.categorySlug === selectedCategory;
       const matchesSearch =
@@ -87,7 +127,7 @@ function HomePage() {
         p.seller.toLowerCase().includes(searchFilter.toLowerCase());
       return matchesCategory && matchesSearch;
     });
-  }, [activeTab, selectedCategory, searchFilter]);
+  }, [activeTab, selectedCategory, searchFilter, approvedAds]);
 
   return (
     <div className="dark min-h-screen bg-[#070709] text-foreground antialiased">

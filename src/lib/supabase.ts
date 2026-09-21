@@ -36,8 +36,8 @@ export interface Ad {
 }
 
 const env = import.meta.env as Record<string, string | undefined>;
-const supabaseUrl = env["VITE_SUPABASE_URL"] || "";
-const supabaseAnonKey = env["VITE_SUPABASE_ANON_KEY"] || "";
+export const supabaseUrl = env["VITE_SUPABASE_URL"] || "https://ptsfnikkvkxfzjcfuvfj.supabase.co";
+export const supabaseAnonKey = env["VITE_SUPABASE_ANON_KEY"] || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0c2ZuaWtrdmt4ZnpqY2Z1dmZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwMTgyNjMsImV4cCI6MjEwNTU5NDI2M30.zyf0_YcYIEwHkTD-GKNg5FuS7iEftjd_p7cLe3XMXww";
 
 export const isLiveSupabaseConfigured =
   Boolean(supabaseUrl && supabaseAnonKey) &&

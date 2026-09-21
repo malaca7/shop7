@@ -103,7 +103,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .select("*")
               .eq("id", session.user.id)
               .single();
-            if (prof) setProfile(prof as Profile);
+            if (prof) {
+              setProfile(prof as Profile);
+            } else {
+              const meta = session.user.user_metadata as Record<string, any> | undefined;
+              setProfile({
+                id: session.user.id,
+                email: session.user.email || "",
+                full_name: (meta?.["full_name"] || meta?.["name"] || session.user.email?.split("@")[0]) || null,
+                avatar_url: (meta?.["avatar_url"] || meta?.["picture"]) || null,
+                role: "user",
+              });
+            }
           } else {
             setUser(null);
             setProfile(null);
@@ -199,10 +210,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 3. Login com Google OAuth
   const signInWithGoogle = async () => {
     if (isLiveSupabaseConfigured) {
+      const currentOrigin =
+        typeof window !== "undefined" && window.location.origin
+          ? window.location.origin
+          : "https://shop7.malaca.com.br";
+      const redirectUrl = `${currentOrigin}/minha-conta`;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin + "/minha-conta",
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
         },
       });
       if (error) throw error;

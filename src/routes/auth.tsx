@@ -1,10 +1,24 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { ShieldCheck, Mail, Lock, User, ArrowRight, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  ShieldCheck,
+  Mail,
+  Lock,
+  User,
+  ArrowRight,
+  Sparkles,
+  AlertTriangle,
+  Copy,
+  Check,
+  ExternalLink,
+  HelpCircle,
+  X,
+} from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { isLiveSupabaseConfigured, supabaseUrl } from "@/lib/supabase";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -22,6 +36,34 @@ function AuthPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showOAuthHelpModal, setShowOAuthHelpModal] = useState(false);
+  const [copiedCallback, setCopiedCallback] = useState(false);
+
+  const callbackUrl = `${supabaseUrl}/auth/v1/callback`;
+
+  // Capturar mensagens de erro vindas de redirect OAuth do Google/Supabase
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+
+      const errDesc =
+        searchParams.get("error_description") ||
+        hashParams.get("error_description") ||
+        searchParams.get("error") ||
+        hashParams.get("error");
+
+      if (errDesc) {
+        const decoded = decodeURIComponent(errDesc.replace(/\+/g, " "));
+        setError(
+          decoded.includes("redirect_uri_mismatch") || decoded.includes("invalid_request")
+            ? "Erro no Google OAuth: redirect_uri_mismatch. O Google rejeitou o redirecionamento. Clique no botão de ajuda abaixo para resolver."
+            : `Erro de autenticação: ${decoded}`
+        );
+        setShowOAuthHelpModal(true);
+      }
+    }
+  }, []);
 
   // Se já logado, vai para minha conta
   if (user) {
@@ -55,9 +97,26 @@ function AuthPage() {
     setError(null);
     try {
       await signInWithGoogle();
-      navigate({ to: "/minha-conta" });
+      // Em modo demo redireciona localmente, em modo Supabase real a página redireciona para o Google
+      if (!isLiveSupabaseConfigured) {
+        navigate({ to: "/minha-conta" });
+      }
     } catch (err: any) {
-      setError(err.message || "Falha ao autenticar com o Google.");
+      const msg = err.message || "";
+      if (msg.includes("redirect_uri_mismatch") || msg.includes("invalid_request")) {
+        setError("Erro 400: redirect_uri_mismatch. A URL de callback do Supabase precisa ser autorizada no Google Cloud Console.");
+        setShowOAuthHelpModal(true);
+      } else {
+        setError(msg || "Falha ao autenticar com o Google.");
+      }
+    }
+  };
+
+  const handleCopyCallback = () => {
+    if (typeof navigator !== "undefined") {
+      navigator.clipboard.writeText(callbackUrl);
+      setCopiedCallback(true);
+      setTimeout(() => setCopiedCallback(false), 3000);
     }
   };
 
@@ -132,17 +191,25 @@ function AuthPage() {
             </div>
 
             {error && (
-              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
-                {error}
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 space-y-2">
+                <p>{error}</p>
+                <button
+                  type="button"
+                  onClick={() => setShowOAuthHelpModal(true)}
+                  className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline"
+                >
+                  <HelpCircle className="size-3.5" />
+                  <span>Ver como corrigir o erro do Google</span>
+                </button>
               </div>
             )}
 
             {/* Botão de Login com Google */}
-            <div className="mt-5">
+            <div className="mt-5 space-y-2">
               <button
                 type="button"
                 onClick={handleGoogleLogin}
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#14151a] py-2.5 text-xs font-semibold text-foreground transition-all hover:border-white/20 hover:bg-[#181a20]"
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#14151a] py-2.5 text-xs font-semibold text-foreground transition-all hover:border-white/20 hover:bg-[#181a20] active:scale-[0.99]"
               >
                 <svg className="size-4" viewBox="0 0 24 24">
                   <path
@@ -163,6 +230,15 @@ function AuthPage() {
                   />
                 </svg>
                 <span>Continuar com o Google</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowOAuthHelpModal(true)}
+                className="w-full text-center text-[11px] text-muted-foreground/80 hover:text-primary transition-colors flex items-center justify-center gap-1 py-1"
+              >
+                <HelpCircle className="size-3" />
+                <span>Instruções para configurar Google OAuth</span>
               </button>
             </div>
 
@@ -235,7 +311,7 @@ function AuthPage() {
             {/* Acesso Rápido de Testes de Roles */}
             <div className="mt-6 pt-4 border-t border-white/[0.06] text-center">
               <p className="text-[11px] font-semibold text-muted-foreground flex items-center justify-center gap-1">
-                <Sparkles className="size-3 text-primary" /> Testar Funções (Modo de Demonstração):
+                <Sparkles className="size-3 text-primary" /> Testar Funções Instantâneas:
               </p>
               <div className="mt-2 flex flex-wrap justify-center gap-1.5">
                 <button
@@ -266,6 +342,98 @@ function AuthPage() {
       </main>
 
       <Footer />
+
+      {/* Modal de Instruções para Correção de redirect_uri_mismatch */}
+      {showOAuthHelpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+          <div
+            onClick={() => setShowOAuthHelpModal(false)}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+          />
+
+          <div className="relative z-10 w-full max-w-lg rounded-3xl border border-white/[0.1] bg-[#0e0f13] p-6 shadow-2xl text-foreground">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+              <div className="flex items-center gap-2.5 text-yellow-400">
+                <AlertTriangle className="size-5" />
+                <h3 className="text-base font-bold text-foreground">
+                  Como Corrigir o Erro 400: redirect_uri_mismatch
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOAuthHelpModal(false)}
+                className="grid size-8 place-items-center rounded-xl border border-white/[0.06] bg-surface text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4 text-xs text-muted-foreground leading-relaxed">
+              <p>
+                O erro <strong className="text-foreground font-mono">redirect_uri_mismatch</strong> acontece porque o Google Cloud Console exige que a URL de retorno do Supabase esteja explicitamente autorizada.
+              </p>
+
+              {/* Passo 1 */}
+              <div className="rounded-2xl border border-white/[0.06] bg-[#14151b] p-4">
+                <span className="font-bold text-foreground text-xs block mb-1">
+                  1. No Google Cloud Console (console.cloud.google.com):
+                </span>
+                <p className="text-[11px] mb-2">
+                  Vá em <strong>APIs e Serviços</strong> &gt; <strong>Credenciais</strong> &gt; Clique no seu <strong>ID do cliente OAuth 2.0</strong>.
+                </p>
+                <p className="text-[11px] mb-2">
+                  No campo <strong>"URIs de redirecionamento autorizados"</strong>, adicione exatamente:
+                </p>
+                <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 p-2.5">
+                  <code className="flex-1 font-mono text-[11px] text-primary truncate">
+                    {callbackUrl}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyCallback}
+                    className="gradient-lime flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-bold text-black shrink-0"
+                  >
+                    {copiedCallback ? <Check className="size-3" /> : <Copy className="size-3" />}
+                    <span>{copiedCallback ? "Copiado!" : "Copiar"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Passo 2 */}
+              <div className="rounded-2xl border border-white/[0.06] bg-[#14151b] p-4">
+                <span className="font-bold text-foreground text-xs block mb-1">
+                  2. No Painel do Supabase (supabase.com):
+                </span>
+                <p className="text-[11px] mb-2">
+                  Acesse <strong>Authentication</strong> &gt; <strong>URL Configuration</strong>:
+                </p>
+                <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                  <li>
+                    <strong>Site URL:</strong> <code className="font-mono text-foreground">https://shop7.malaca.com.br</code>
+                  </li>
+                  <li>
+                    <strong>Redirect URLs:</strong> adicione <code className="font-mono text-foreground">https://shop7.malaca.com.br/**</code> e <code className="font-mono text-foreground">http://localhost:8080/**</code>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="rounded-xl border border-primary/20 bg-primary/[0.06] p-3 text-[11px] text-primary/90">
+                💡 Após salvar essas URLs no Google Cloud Console e no Supabase, o login do Google funcionará perfeitamente tanto no domínio <strong>shop7.malaca.com.br</strong> quanto no ambiente de desenvolvimento local.
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowOAuthHelpModal(false)}
+                className="gradient-lime rounded-xl px-4 py-2 text-xs font-bold text-black"
+              >
+                Entendi, vou configurar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

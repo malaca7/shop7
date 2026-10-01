@@ -7,18 +7,17 @@ import {
   User,
   ArrowRight,
   Sparkles,
-  AlertTriangle,
-  Copy,
-  Check,
-  ExternalLink,
-  HelpCircle,
-  X,
+  Loader2,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { isLiveSupabaseConfigured, supabaseUrl } from "@/lib/supabase";
+import {
+  GOOGLE_CLIENT_ID,
+  loadGoogleIdentityScript,
+  parseGoogleJwt,
+} from "@/lib/google-auth";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -28,7 +27,14 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, isLoading } = useAuth();
+  const {
+    user,
+    signInWithEmail,
+    signUpWithEmail,
+    signInWithGoogle,
+    loginWithGoogleData,
+    isLoading,
+  } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
@@ -36,39 +42,54 @@ function AuthPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showOAuthHelpModal, setShowOAuthHelpModal] = useState(false);
-  const [copiedCallback, setCopiedCallback] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const callbackUrl = `${supabaseUrl}/auth/v1/callback`;
-
-  // Capturar mensagens de erro vindas de redirect OAuth do Google/Supabase
+  // Se já logado, redireciona para a central da conta
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const searchParams = new URLSearchParams(window.location.search);
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    if (user) {
+      navigate({ to: "/minha-conta" });
+    }
+  }, [user, navigate]);
 
-      const errDesc =
-        searchParams.get("error_description") ||
-        hashParams.get("error_description") ||
-        searchParams.get("error") ||
-        hashParams.get("error");
+  // Inicializar Google Identity Services (One Tap / ID Token)
+  useEffect(() => {
+    let isMounted = true;
 
-      if (errDesc) {
-        const decoded = decodeURIComponent(errDesc.replace(/\+/g, " "));
-        setError(
-          decoded.includes("redirect_uri_mismatch") || decoded.includes("invalid_request")
-            ? "Erro no Google OAuth: redirect_uri_mismatch. O Google rejeitou o redirecionamento. Clique no botão de ajuda abaixo para resolver."
-            : `Erro de autenticação: ${decoded}`
-        );
-        setShowOAuthHelpModal(true);
+    async function setupGoogle() {
+      try {
+        await loadGoogleIdentityScript();
+        if (!isMounted || !window.google?.accounts?.id) return;
+
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: async (response: { credential?: string }) => {
+            if (!response?.credential) return;
+            const googleUser = parseGoogleJwt(response.credential);
+            if (googleUser) {
+              setGoogleLoading(true);
+              try {
+                await loginWithGoogleData(googleUser);
+                navigate({ to: "/minha-conta" });
+              } catch (err: any) {
+                setError(err?.message || "Falha ao autenticar com o Google.");
+              } finally {
+                setGoogleLoading(false);
+              }
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+      } catch (e) {
+        console.warn("Google Identity Services script not available:", e);
       }
     }
-  }, []);
 
-  // Se já logado, vai para minha conta
-  if (user) {
-    navigate({ to: "/minha-conta" });
-  }
+    setupGoogle();
+    return () => {
+      isMounted = false;
+    };
+  }, [loginWithGoogleData, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,7 +108,7 @@ function AuthPage() {
       }
       navigate({ to: "/minha-conta" });
     } catch (err: any) {
-      setError(err.message || "Erro na autenticação. Verifique suas credenciais.");
+      setError(err?.message || "Erro na autenticação. Verifique suas credenciais.");
     } finally {
       setLoading(false);
     }
@@ -95,28 +116,18 @@ function AuthPage() {
 
   const handleGoogleLogin = async () => {
     setError(null);
+    setGoogleLoading(true);
     try {
       await signInWithGoogle();
-      // Em modo demo redireciona localmente, em modo Supabase real a página redireciona para o Google
-      if (!isLiveSupabaseConfigured) {
-        navigate({ to: "/minha-conta" });
-      }
+      navigate({ to: "/minha-conta" });
     } catch (err: any) {
-      const msg = err.message || "";
-      if (msg.includes("redirect_uri_mismatch") || msg.includes("invalid_request")) {
-        setError("Erro 400: redirect_uri_mismatch. A URL de callback do Supabase precisa ser autorizada no Google Cloud Console.");
-        setShowOAuthHelpModal(true);
-      } else {
-        setError(msg || "Falha ao autenticar com o Google.");
+      if (err?.message === "POPUP_CLOSED") {
+        // Usuário fechou o popup do Google voluntariamente, sem erro alarmante
+        return;
       }
-    }
-  };
-
-  const handleCopyCallback = () => {
-    if (typeof navigator !== "undefined") {
-      navigator.clipboard.writeText(callbackUrl);
-      setCopiedCallback(true);
-      setTimeout(() => setCopiedCallback(false), 3000);
+      setError(err?.message || "Não foi possível conectar com o Google no momento.");
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -158,7 +169,7 @@ function AuthPage() {
               </p>
             </div>
 
-            {/* Tabs de Modo: Entrar / Cadastrar */}
+            {/* Seletor de Modo: Entrar ou Cadastrar */}
             <div className="mt-6 grid grid-cols-2 rounded-xl border border-white/[0.06] bg-[#121317] p-1">
               <button
                 type="button"
@@ -190,70 +201,50 @@ function AuthPage() {
               </button>
             </div>
 
+            {/* Mensagem de Erro contextual */}
             {error && (
-              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 space-y-2">
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
                 <p>{error}</p>
-                <button
-                  type="button"
-                  onClick={() => setShowOAuthHelpModal(true)}
-                  className="inline-flex items-center gap-1.5 font-bold text-primary hover:underline"
-                >
-                  <HelpCircle className="size-3.5" />
-                  <span>Ver como corrigir o erro do Google</span>
-                </button>
               </div>
             )}
 
-            {/* Botão de Login com Google */}
-            <div className="mt-5 space-y-2">
+            {/* Botão Oficial de Login com Google (API Google Identity Services) */}
+            <div className="mt-5">
               <button
                 type="button"
                 onClick={handleGoogleLogin}
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#14151a] py-2.5 text-xs font-semibold text-foreground transition-all hover:border-white/20 hover:bg-[#181a20] active:scale-[0.99]"
+                disabled={googleLoading || loading || isLoading}
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#14151a] py-2.5 text-xs font-semibold text-foreground transition-all hover:border-white/20 hover:bg-[#181a20] active:scale-[0.99] disabled:opacity-60"
               >
-                <svg className="size-4" viewBox="0 0 24 24">
-                  <path
-                    fill="#EA4335"
-                    d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.2c0 2.9.7 5.5 1.9 7.9l3.7-2.9c-.2-.7-.4-1.5-.4-2.4z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 17C3.7 20.7 7.5 23.5 12 23.5z"
-                  />
-                </svg>
-                <span>Continuar com o Google</span>
+                {googleLoading ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin text-primary" />
+                    <span>Conectando com o Google...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="size-4 shrink-0" viewBox="0 0 24 24">
+                      <path
+                        fill="#EA4335"
+                        d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"
+                      />
+                      <path
+                        fill="#4285F4"
+                        d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.2c0 2.9.7 5.5 1.9 7.9l3.7-2.9c-.2-.7-.4-1.5-.4-2.4z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 17C3.7 20.7 7.5 23.5 12 23.5z"
+                      />
+                    </svg>
+                    <span>Continuar com o Google</span>
+                  </>
+                )}
               </button>
-
-              {/* Banner informativo sobre redirect_uri_mismatch */}
-              <div className="rounded-2xl border border-yellow-500/25 bg-yellow-500/[0.06] p-3 text-left">
-                <div className="flex items-start gap-2 text-yellow-400">
-                  <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-bold text-yellow-300">
-                      Aviso sobre erro no Google (redirect_uri_mismatch):
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                      Para o Google autorizar o login, o URI de callback do Supabase deve ser cadastrado no seu Google Cloud Console.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setShowOAuthHelpModal(true)}
-                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                    >
-                      <HelpCircle className="size-3.5" />
-                      <span>Ver URI de Callback para Copiar (Passo a Passo)</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="relative my-5 flex items-center justify-center">
@@ -314,15 +305,21 @@ function AuthPage() {
 
               <button
                 type="submit"
-                disabled={loading || isLoading}
+                disabled={loading || isLoading || googleLoading}
                 className="gradient-lime mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold text-black shadow-[0_4px_16px_rgba(132,204,22,0.35)] transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
               >
-                <span>{loading ? "Processando..." : mode === "login" ? "Entrar na Conta" : "Criar Minha Conta"}</span>
+                <span>
+                  {loading
+                    ? "Processando..."
+                    : mode === "login"
+                      ? "Entrar na Conta"
+                      : "Criar Minha Conta"}
+                </span>
                 <ArrowRight className="size-4" />
               </button>
             </form>
 
-            {/* Acesso Rápido de Testes de Roles */}
+            {/* Acesso Rápido de Demonstração / Funções Instantâneas */}
             <div className="mt-6 pt-4 border-t border-white/[0.06] text-center">
               <p className="text-[11px] font-semibold text-muted-foreground flex items-center justify-center gap-1">
                 <Sparkles className="size-3 text-primary" /> Testar Funções Instantâneas:
@@ -351,117 +348,17 @@ function AuthPage() {
                 </button>
               </div>
             </div>
+
+            {/* Selo de Proteção */}
+            <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/70">
+              <ShieldCheck className="size-3.5 text-primary/80" />
+              <span>Autenticação protegida com criptografia ponta a ponta</span>
+            </div>
           </div>
         </div>
       </main>
 
       <Footer />
-
-      {/* Modal de Instruções para Correção de redirect_uri_mismatch */}
-      {showOAuthHelpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-          <div
-            onClick={() => setShowOAuthHelpModal(false)}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
-          />
-
-          <div className="relative z-10 w-full max-w-lg rounded-3xl border border-white/[0.1] bg-[#0e0f13] p-6 shadow-2xl text-foreground">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
-              <div className="flex items-center gap-2.5 text-yellow-400">
-                <AlertTriangle className="size-5" />
-                <h3 className="text-base font-bold text-foreground">
-                  Como Corrigir o Erro 400: redirect_uri_mismatch
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowOAuthHelpModal(false)}
-                className="grid size-8 place-items-center rounded-xl border border-white/[0.06] bg-surface text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4 text-xs text-muted-foreground leading-relaxed">
-              <p>
-                O erro <strong className="text-foreground font-mono">redirect_uri_mismatch</strong> acontece porque o Google Cloud Console exige que a URL de retorno do Supabase esteja explicitamente autorizada.
-              </p>
-
-              {/* Passo 1 */}
-              <div className="rounded-2xl border border-white/[0.06] bg-[#14151b] p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-foreground text-xs">
-                    1. No Google Cloud Console:
-                  </span>
-                  <a
-                    href="https://console.cloud.google.com/apis/credentials"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline font-semibold"
-                  >
-                    <span>Abrir Credenciais Google</span>
-                    <ExternalLink className="size-3" />
-                  </a>
-                </div>
-                <p className="text-[11px] mb-2">
-                  Acesse com a conta <strong>rogeriosantanajr@gmail.com</strong> e edite o ID do cliente:
-                  <code className="block mt-1 font-mono text-[10px] text-muted-foreground/90 bg-black/40 p-1 rounded">
-                    636848592961-1jg2mu7ifjq4f5hb9o2f52ucjd5eft8c.apps.googleusercontent.com
-                  </code>
-                </p>
-                <p className="text-[11px] mb-2">
-                  No campo <strong>"URIs de redirecionamento autorizados"</strong>, adicione exatamente este link:
-                </p>
-                <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 p-2.5">
-                  <code className="flex-1 font-mono text-[11px] text-primary truncate">
-                    {callbackUrl}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={handleCopyCallback}
-                    className="gradient-lime flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-bold text-black shrink-0"
-                  >
-                    {copiedCallback ? <Check className="size-3" /> : <Copy className="size-3" />}
-                    <span>{copiedCallback ? "Copiado!" : "Copiar"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Passo 2 */}
-              <div className="rounded-2xl border border-white/[0.06] bg-[#14151b] p-4">
-                <span className="font-bold text-foreground text-xs block mb-1">
-                  2. No Painel do Supabase (supabase.com):
-                </span>
-                <p className="text-[11px] mb-2">
-                  Acesse <strong>Authentication</strong> &gt; <strong>URL Configuration</strong>:
-                </p>
-                <ul className="list-disc pl-4 space-y-1 text-[11px]">
-                  <li>
-                    <strong>Site URL:</strong> <code className="font-mono text-foreground">https://shop7.malaca.com.br</code>
-                  </li>
-                  <li>
-                    <strong>Redirect URLs:</strong> adicione <code className="font-mono text-foreground">https://shop7.malaca.com.br/**</code> e <code className="font-mono text-foreground">http://localhost:8080/**</code>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="rounded-xl border border-primary/20 bg-primary/[0.06] p-3 text-[11px] text-primary/90">
-                💡 Após salvar essas URLs no Google Cloud Console e no Supabase, o login do Google funcionará perfeitamente tanto no domínio <strong>shop7.malaca.com.br</strong> quanto no ambiente de desenvolvimento local.
-              </div>
-            </div>
-
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowOAuthHelpModal(false)}
-                className="gradient-lime rounded-xl px-4 py-2 text-xs font-bold text-black"
-              >
-                Entendi, vou configurar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

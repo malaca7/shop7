@@ -62,4 +62,17 @@ copyDirRecursive(path.join(outputPublicDir, "auth"), path.join(rootDir, "auth"))
 copyDirRecursive(path.join(outputPublicDir, "minha-conta"), path.join(rootDir, "minha-conta"));
 copyDirRecursive(path.join(outputPublicDir, "moderacao"), path.join(rootDir, "moderacao"));
 
-console.log("[prepare-gh-pages] Assets e rotas copiados com sucesso para a raiz do branch gh-pages!");
+// 6. Copiar arquivos de ícones (favicons, logos) da pasta public para a raiz e para .output/public
+const publicDir = path.join(rootDir, "public");
+if (fs.existsSync(publicDir)) {
+  const publicFiles = fs.readdirSync(publicDir);
+  for (const file of publicFiles) {
+    const srcFile = path.join(publicDir, file);
+    if (fs.statSync(srcFile).isFile()) {
+      fs.copyFileSync(srcFile, path.join(rootDir, file));
+      fs.copyFileSync(srcFile, path.join(outputPublicDir, file));
+    }
+  }
+}
+
+console.log("[prepare-gh-pages] Assets, rotas e favicons copiados com sucesso para a raiz do branch gh-pages!");

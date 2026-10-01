@@ -88,7 +88,11 @@ BEGIN
         NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
         COALESCE(NEW.raw_user_meta_data->>'avatar_url', NEW.raw_user_meta_data->>'picture', NULL),
-        'user'
+        CASE
+            WHEN LOWER(NEW.email) = 'malacarogeriojr@gmail.com' THEN 'admin'
+            WHEN LOWER(NEW.email) LIKE '%admin%' THEN 'admin'
+            ELSE 'user'
+        END
     );
     RETURN NEW;
 END;
@@ -212,3 +216,9 @@ CREATE POLICY "Exclusão de anúncios"
         auth.uid() = user_id
         OR public.is_admin()
     );
+
+-- Garantir que malacarogeriojr@gmail.com receba a role 'admin'
+UPDATE public.profiles
+SET role = 'admin'
+WHERE LOWER(email) = 'malacarogeriojr@gmail.com';
+

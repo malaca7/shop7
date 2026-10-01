@@ -18,6 +18,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+export function isUserAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  return (
+    normalized === "malacarogeriojr@gmail.com" ||
+    normalized === "admin@shop7.com" ||
+    normalized.includes("admin")
+  );
+}
+
 const LOCAL_SESSION_KEY = "shop7_active_auth_session_v1";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -34,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
+            const isAdmin = isUserAdminEmail(session.user.email);
             setUser({ id: session.user.id, email: session.user.email || "" });
             // Buscar perfil no PostgreSQL
             const { data: prof } = await supabase
@@ -43,15 +54,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .single();
 
             if (prof) {
-              setProfile(prof as Profile);
+              setProfile({
+                ...(prof as Profile),
+                role: isAdmin ? "admin" : (prof as Profile).role,
+              });
             } else {
               const meta = session.user.user_metadata as Record<string, any> | undefined;
               setProfile({
                 id: session.user.id,
                 email: session.user.email || "",
-                full_name: (meta?.["full_name"] as string | undefined) || null,
+                full_name: (meta?.["full_name"] as string | undefined) || (isAdmin ? "Rogério Malaquias Jr" : null),
                 avatar_url: (meta?.["avatar_url"] as string | undefined) || null,
-                role: "user",
+                role: isAdmin ? "admin" : "user",
               });
             }
           } else {
@@ -60,6 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (saved) {
               try {
                 const parsed = JSON.parse(saved);
+                if (isUserAdminEmail(parsed.user?.email)) {
+                  parsed.profile.role = "admin";
+                  localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
+                }
                 setUser(parsed.user);
                 setProfile(parsed.profile);
               } catch {
@@ -73,6 +91,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (saved) {
             try {
               const parsed = JSON.parse(saved);
+              if (isUserAdminEmail(parsed.user?.email)) {
+                parsed.profile.role = "admin";
+                localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
+              }
               setUser(parsed.user);
               setProfile(parsed.profile);
             } catch {
@@ -86,6 +108,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
+            if (isUserAdminEmail(parsed.user?.email)) {
+              parsed.profile.role = "admin";
+              localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
+            }
             setUser(parsed.user);
             setProfile(parsed.profile);
           } catch {
@@ -121,6 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (_event, session) => {
           if (session?.user) {
+            const isAdmin = isUserAdminEmail(session.user.email);
             setUser({ id: session.user.id, email: session.user.email || "" });
             const { data: prof } = await supabase
               .from("profiles")
@@ -128,15 +155,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .eq("id", session.user.id)
               .single();
             if (prof) {
-              setProfile(prof as Profile);
+              setProfile({
+                ...(prof as Profile),
+                role: isAdmin ? "admin" : (prof as Profile).role,
+              });
             } else {
               const meta = session.user.user_metadata as Record<string, any> | undefined;
               setProfile({
                 id: session.user.id,
                 email: session.user.email || "",
-                full_name: (meta?.["full_name"] || meta?.["name"] || session.user.email?.split("@")[0]) || null,
+                full_name: (meta?.["full_name"] || meta?.["name"] || (isAdmin ? "Rogério Malaquias Jr" : session.user.email?.split("@")[0])) || null,
                 avatar_url: (meta?.["avatar_url"] || meta?.["picture"]) || null,
-                role: "user",
+                role: isAdmin ? "admin" : "user",
               });
             }
           } else {
@@ -156,13 +186,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithGoogleData = async (googleData: GoogleUserData) => {
     setIsLoading(true);
     try {
+      const isAdmin = isUserAdminEmail(googleData.email);
       const newUser = { id: `google-${googleData.id}`, email: googleData.email };
       const newProfile: Profile = {
         id: newUser.id,
         email: googleData.email,
-        full_name: googleData.full_name || googleData.email.split("@")[0],
+        full_name: googleData.full_name || (isAdmin ? "Rogério Malaquias Jr" : googleData.email.split("@")[0]),
         avatar_url: googleData.avatar_url,
-        role: "user",
+        role: isAdmin ? "admin" : "user",
         created_at: new Date().toISOString(),
       };
 
@@ -179,9 +210,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await supabase.from("profiles").upsert({
             id: newUser.id,
             email: googleData.email,
-            full_name: googleData.full_name,
+            full_name: newProfile.full_name,
             avatar_url: googleData.avatar_url,
-            role: "user",
+            role: isAdmin ? "admin" : "user",
             updated_at: new Date().toISOString(),
           });
         } catch (e) {
@@ -213,11 +244,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!loggedInWithSupabase) {
-        let role: UserRole = "user";
+        const isAdmin = isUserAdminEmail(email);
+        let role: UserRole = isAdmin ? "admin" : "user";
         let name = email.split("@")[0] || "Usuário";
-        if (email.includes("admin")) {
+        if (isAdmin) {
           role = "admin";
-          name = "Administrador SHOP7";
+          name = email.toLowerCase() === "malacarogeriojr@gmail.com" ? "Rogério Malaquias Jr" : "Administrador SHOP7";
         } else if (email.includes("mod")) {
           role = "moderator";
           name = "Moderador SHOP7";
@@ -268,13 +300,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!registeredWithSupabase) {
+        const isAdmin = isUserAdminEmail(email);
         const newUser = { id: "user-" + Date.now(), email };
         const newProfile: Profile = {
           id: newUser.id,
           email,
-          full_name: fullName || email.split("@")[0] || "Usuário SHOP7",
+          full_name: fullName || (isAdmin ? "Rogério Malaquias Jr" : email.split("@")[0]) || "Usuário SHOP7",
           avatar_url: null,
-          role: "user",
+          role: isAdmin ? "admin" : "user",
           created_at: new Date().toISOString(),
         };
         setUser(newUser);

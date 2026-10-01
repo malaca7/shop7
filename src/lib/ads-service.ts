@@ -86,6 +86,14 @@ const INITIAL_DEMO_PROFILES: Profile[] = [
     role: "admin",
     created_at: new Date(Date.now() - 86400000 * 60).toISOString(),
   },
+  {
+    id: "admin-malaca-1",
+    email: "malacarogeriojr@gmail.com",
+    full_name: "Rogério Malaquias Jr",
+    avatar_url: null,
+    role: "admin",
+    created_at: new Date().toISOString(),
+  },
 ];
 
 function getLocalAds(): Ad[] {
@@ -110,15 +118,35 @@ function saveLocalAds(ads: Ad[]) {
 function getLocalProfiles(): Profile[] {
   if (typeof window === "undefined") return INITIAL_DEMO_PROFILES;
   const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
+  let list: Profile[] = [];
   if (!raw) {
-    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(INITIAL_DEMO_PROFILES));
-    return INITIAL_DEMO_PROFILES;
+    list = INITIAL_DEMO_PROFILES;
+  } else {
+    try {
+      list = JSON.parse(raw);
+    } catch {
+      list = INITIAL_DEMO_PROFILES;
+    }
   }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return INITIAL_DEMO_PROFILES;
+
+  // Garantir que malacarogeriojr@gmail.com sempre conste como admin
+  const malacaProfile = list.find((p) => p.email.toLowerCase() === "malacarogeriojr@gmail.com");
+  if (!malacaProfile) {
+    list.unshift({
+      id: "admin-malaca-1",
+      email: "malacarogeriojr@gmail.com",
+      full_name: "Rogério Malaquias Jr",
+      avatar_url: null,
+      role: "admin",
+      created_at: new Date().toISOString(),
+    });
+    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
+  } else if (malacaProfile.role !== "admin") {
+    malacaProfile.role = "admin";
+    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
   }
+
+  return list;
 }
 
 function saveLocalProfiles(profiles: Profile[]) {

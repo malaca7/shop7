@@ -138,7 +138,7 @@ function AuthPage() {
     } else if (role === "mod") {
       await signInWithEmail("moderador@shop7.com", "123456");
     } else {
-      await signInWithEmail("admin@shop7.com", "123456");
+      await signInWithEmail("malacarogeriojr@gmail.com", "123456");
     }
     navigate({ to: "/minha-conta" });
   };

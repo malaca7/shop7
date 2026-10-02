@@ -24,19 +24,31 @@ import {
   Wrench,
   ChevronDown,
   Info,
+  Plus,
+  Edit,
+  Trash2,
+  DollarSign,
+  TrendingUp,
+  UserPlus,
+  UserX,
+  BadgeCheck,
+  RefreshCw,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { RejectModal } from "@/components/ads/RejectModal";
 import { AdDetailModal } from "@/components/ads/AdDetailModal";
+import { CreateAdModal } from "@/components/ads/CreateAdModal";
+import { UserModal } from "@/components/admin/UserModal";
 import { AdsService } from "@/lib/ads-service";
 import type { Ad, Profile, UserRole, AdType, AdStatus } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
 
 export const Route = createFileRoute("/moderacao")({
   head: () => ({
-    meta: [{ title: "Central de Moderação — SHOP7" }],
+    meta: [{ title: "Painel de Moderação & Gestão Administrativa — SHOP7" }],
   }),
   component: ModeracaoPage,
 });
@@ -45,24 +57,38 @@ function ModeracaoPage() {
   const { user, role, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<"pendentes" | "historico" | "usuarios">("pendentes");
+  const [activeTab, setActiveTab] = useState<"pendentes" | "todos-anuncios" | "usuarios" | "historico" | "metricas">("pendentes");
   const [pendingAds, setPendingAds] = useState<Ad[]>([]);
   const [allAds, setAllAds] = useState<Ad[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Modais
+  // Modais de Anúncios
   const [detailAd, setDetailAd] = useState<Ad | null>(null);
   const [rejectingAd, setRejectingAd] = useState<Ad | null>(null);
-  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [isAdModalOpen, setIsAdModalOpen] = useState(false);
+  const [editingAd, setEditingAd] = useState<Ad | null>(null);
 
-  // Filtros
+  // Modais de Usuários
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+
+  // Notificações de Ação
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [actionErrorMsg, setActionErrorMsg] = useState<string | null>(null);
+
+  // Filtros de Anúncios
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"todos" | AdType>("todos");
   const [filterCategory, setFilterCategory] = useState<string>("todas");
+  const [filterStatus, setFilterStatus] = useState<"todos" | AdStatus>("todos");
   const [filterDateRange, setFilterDateRange] = useState<"todos" | "hoje" | "7dias" | "30dias">("todos");
-  const [sortOrder, setSortOrder] = useState<"recentes" | "antigos">("recentes");
-  const [filterDecision, setFilterDecision] = useState<"todos" | "approved" | "rejected">("todos");
+  const [sortOrder, setSortOrder] = useState<"recentes" | "antigos" | "maior_preco" | "menor_preco">("recentes");
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string | null>(null);
+
+  // Filtros de Usuários
+  const [userSearch, setUserSearch] = useState("");
+  const [userRoleFilter, setUserRoleFilter] = useState<"todos" | UserRole>("todos");
 
   // Redireciona caso deslogado
   useEffect(() => {
@@ -95,11 +121,30 @@ function ModeracaoPage() {
     }
   }, [role]);
 
-  // Contadores de métricas no topo
-  const pendingCount = pendingAds.length;
-  const approvedCount = useMemo(() => allAds.filter((a) => a.status === "approved").length, [allAds]);
-  const rejectedCount = useMemo(() => allAds.filter((a) => a.status === "rejected").length, [allAds]);
-  const decisionsCount = approvedCount + rejectedCount;
+  // Mensagem temporária
+  const showFeedback = (msg: string, isError = false) => {
+    if (isError) {
+      setActionErrorMsg(msg);
+      setTimeout(() => setActionErrorMsg(null), 5000);
+    } else {
+      setActionSuccessMsg(msg);
+      setTimeout(() => setActionSuccessMsg(null), 5000);
+    }
+  };
+
+  // Contadores & Métricas
+  const stats = useMemo(() => {
+    const total = allAds.length;
+    const pending = pendingAds.length;
+    const approved = allAds.filter((a) => a.status === "approved").length;
+    const rejected = allAds.filter((a) => a.status === "rejected").length;
+    const totalValue = allAds
+      .filter((a) => a.status === "approved")
+      .reduce((sum, a) => sum + (Number(a.price) || 0) * (Number(a.stock) || 1), 0);
+    const usersCount = profiles.length;
+
+    return { total, pending, approved, rejected, totalValue, usersCount };
+  }, [allAds, pendingAds, profiles]);
 
   // Formatar tempo decorrido relativo
   const getRelativeTime = (isoString: string) => {
@@ -133,122 +178,73 @@ function ModeracaoPage() {
     }
   };
 
-  // Helper de filtragem reutilizável
-  const applyFilters = (list: Ad[], isDecisionHistory = false) => {
-    return list.filter((ad) => {
-      // 1. Busca por texto
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesTitle = ad.title.toLowerCase().includes(query);
-        const matchesDesc = ad.description.toLowerCase().includes(query);
-        const matchesSeller = (ad.seller_name || "").toLowerCase().includes(query);
-        const matchesReason = (ad.rejection_reason || "").toLowerCase().includes(query);
-        if (!matchesTitle && !matchesDesc && !matchesSeller && !matchesReason) {
-          return false;
-        }
-      }
+  // ==========================================
+  // OPERAÇÕES DE ANÚNCIOS (ADMIN & MOD)
+  // ==========================================
 
-      // 2. Filtro por Tipo
-      if (filterType !== "todos" && ad.type !== filterType) {
-        return false;
-      }
-
-      // 3. Filtro por Categoria
-      if (filterCategory !== "todas" && ad.category !== filterCategory) {
-        return false;
-      }
-
-      // 4. Filtro por Decisão (apenas no Histórico)
-      if (isDecisionHistory && filterDecision !== "todos") {
-        if (ad.status !== filterDecision) return false;
-      }
-
-      // 5. Filtro por Data
-      if (filterDateRange !== "todos") {
-        const adTime = new Date(ad.created_at).getTime();
-        const now = Date.now();
-        const hours24 = 24 * 60 * 60 * 1000;
-        if (filterDateRange === "hoje" && now - adTime > hours24) return false;
-        if (filterDateRange === "7dias" && now - adTime > 7 * hours24) return false;
-        if (filterDateRange === "30dias" && now - adTime > 30 * hours24) return false;
-      }
-
-      return true;
-    }).sort((a, b) => {
-      const timeA = new Date(a.created_at).getTime();
-      const timeB = new Date(b.created_at).getTime();
-      return sortOrder === "recentes" ? timeB - timeA : timeA - timeB;
-    });
-  };
-
-  // Listas filtradas
-  const filteredPendingAds = useMemo(() => applyFilters(pendingAds, false), [
-    pendingAds,
-    searchQuery,
-    filterType,
-    filterCategory,
-    filterDateRange,
-    sortOrder,
-  ]);
-
-  const historyAds = useMemo(() => {
-    const decisions = allAds.filter((a) => a.status === "approved" || a.status === "rejected");
-    return applyFilters(decisions, true);
-  }, [
-    allAds,
-    searchQuery,
-    filterType,
-    filterCategory,
-    filterDateRange,
-    sortOrder,
-    filterDecision,
-  ]);
-
-  const hasActiveFilters =
-    Boolean(searchQuery.trim()) ||
-    filterType !== "todos" ||
-    filterCategory !== "todas" ||
-    filterDateRange !== "todos" ||
-    filterDecision !== "todos" ||
-    sortOrder !== "recentes";
-
-  const clearFilters = () => {
-    setSearchQuery("");
-    setFilterType("todos");
-    setFilterCategory("todas");
-    setFilterDateRange("todos");
-    setFilterDecision("todos");
-    setSortOrder("recentes");
-  };
-
-  // Ação: Aprovar Anúncio
+  // Aprovar Anúncio
   const handleApprove = async (ad: Ad) => {
     if (!user) return;
     try {
       await AdsService.moderateAd(ad.id, "approved", undefined, user.id);
-      setActionSuccessMsg(`Anúncio "${ad.title}" APROVADO com sucesso! Agora está visível publicamente no marketplace.`);
+      showFeedback(`Anúncio "${ad.title}" foi APROVADO e já está público no marketplace!`);
       loadData();
-      setTimeout(() => setActionSuccessMsg(null), 5000);
     } catch (err) {
-      alert("Erro ao aprovar anúncio.");
+      showFeedback("Erro ao aprovar anúncio.", true);
     }
   };
 
-  // Ação: Confirmar Rejeição com Motivo
+  // Confirmar Rejeição com Motivo
   const handleConfirmReject = async (reason: string) => {
     if (!rejectingAd || !user) return;
     try {
       await AdsService.moderateAd(rejectingAd.id, "rejected", reason, user.id);
-      setActionSuccessMsg(`Anúncio "${rejectingAd.title}" REJEITADO. Motivo registrado: "${reason}".`);
+      showFeedback(`Anúncio "${rejectingAd.title}" REJEITADO. Motivo registrado: "${reason}".`);
       setRejectingAd(null);
       loadData();
-      setTimeout(() => setActionSuccessMsg(null), 5000);
     } catch (err) {
-      alert("Erro ao rejeitar anúncio.");
+      showFeedback("Erro ao rejeitar anúncio.", true);
     }
   };
 
-  // Ação Admin: Alterar Role do Usuário
+  // Mudar Status Direto (Aprovado, Pendente, Rejeitado)
+  const handleSetStatus = async (ad: Ad, newStatus: AdStatus) => {
+    if (!user) return;
+    try {
+      if (newStatus === "rejected") {
+        setRejectingAd(ad);
+        return;
+      }
+      await AdsService.adminUpdateAd(ad.id, {
+        status: newStatus,
+        rejection_reason: null,
+        moderated_by: user.id,
+        moderated_at: new Date().toISOString(),
+      });
+      showFeedback(`Status do anúncio "${ad.title}" alterado para ${newStatus.toUpperCase()}.`);
+      loadData();
+    } catch (err) {
+      showFeedback("Erro ao alterar status do anúncio.", true);
+    }
+  };
+
+  // Excluir Anúncio Definitivamente
+  const handleDeleteAd = async (ad: Ad) => {
+    if (!confirm(`Tem certeza que deseja EXCLUIR DEFINITIVAMENTE o anúncio "${ad.title}"?`)) return;
+    try {
+      await AdsService.deleteAd(ad.id);
+      showFeedback(`Anúncio "${ad.title}" excluído com sucesso.`);
+      loadData();
+    } catch (err) {
+      showFeedback("Erro ao excluir anúncio.", true);
+    }
+  };
+
+  // ==========================================
+  // OPERAÇÕES DE USUÁRIOS (ADMIN & MOD)
+  // ==========================================
+
+  // Alterar Role do Usuário
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     if (role !== "admin") {
       alert("Apenas administradores podem alterar papéis.");
@@ -256,13 +252,116 @@ function ModeracaoPage() {
     }
     try {
       await AdsService.updateUserRole(userId, newRole);
-      setActionSuccessMsg(`Permissão atualizada com sucesso para ${newRole}.`);
+      showFeedback(`Nível de acesso atualizado com sucesso para ${newRole.toUpperCase()}.`);
       loadData();
-      setTimeout(() => setActionSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert(err.message || "Erro ao atualizar permissão.");
+      showFeedback(err?.message || "Erro ao atualizar permissão.", true);
     }
   };
+
+  // Excluir Usuário
+  const handleDeleteUser = async (targetUser: Profile) => {
+    if (role !== "admin") {
+      alert("Apenas administradores podem excluir usuários.");
+      return;
+    }
+    if (targetUser.id === user?.id) {
+      alert("Você não pode excluir sua própria conta de administrador ativa.");
+      return;
+    }
+    if (!confirm(`Atenção: Excluir o usuário "${targetUser.full_name || targetUser.email}" removerá a conta e seus anúncios associados. Confirmar exclusão?`)) {
+      return;
+    }
+    try {
+      await AdsService.deleteProfile(targetUser.id);
+      showFeedback(`Usuário "${targetUser.email}" e seus anúncios foram excluídos com sucesso.`);
+      loadData();
+    } catch (err: any) {
+      showFeedback(err?.message || "Erro ao excluir usuário.", true);
+    }
+  };
+
+  // Filtrar anúncios por usuário específico
+  const handleFilterByUser = (userId: string, userName: string) => {
+    setSelectedUserFilter(userId);
+    setSearchQuery("");
+    setActiveTab("todos-anuncios");
+    showFeedback(`Exibindo todos os anúncios de ${userName}.`);
+  };
+
+  // ==========================================
+  // FILTRAGEM DE ANÚNCIOS
+  // ==========================================
+  const filteredAdsList = useMemo(() => {
+    return allAds
+      .filter((ad) => {
+        // Filtro por usuário específico
+        if (selectedUserFilter && ad.user_id !== selectedUserFilter) {
+          return false;
+        }
+
+        // Filtro por status
+        if (filterStatus !== "todos" && ad.status !== filterStatus) {
+          return false;
+        }
+
+        // Busca por texto
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchesTitle = ad.title.toLowerCase().includes(q);
+          const matchesDesc = ad.description.toLowerCase().includes(q);
+          const matchesSeller = (ad.seller_name || "").toLowerCase().includes(q);
+          const matchesCat = ad.category.toLowerCase().includes(q);
+          if (!matchesTitle && !matchesDesc && !matchesSeller && !matchesCat) return false;
+        }
+
+        // Filtro por tipo
+        if (filterType !== "todos" && ad.type !== filterType) return false;
+
+        // Filtro por categoria
+        if (filterCategory !== "todas" && ad.category !== filterCategory) return false;
+
+        // Filtro por data
+        if (filterDateRange !== "todos") {
+          const adTime = new Date(ad.created_at).getTime();
+          const now = Date.now();
+          const hours24 = 24 * 60 * 60 * 1000;
+          if (filterDateRange === "hoje" && now - adTime > hours24) return false;
+          if (filterDateRange === "7dias" && now - adTime > 7 * hours24) return false;
+          if (filterDateRange === "30dias" && now - adTime > 30 * hours24) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortOrder === "recentes") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        if (sortOrder === "antigos") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        if (sortOrder === "maior_preco") return Number(b.price) - Number(a.price);
+        if (sortOrder === "menor_preco") return Number(a.price) - Number(b.price);
+        return 0;
+      });
+  }, [allAds, selectedUserFilter, filterStatus, searchQuery, filterType, filterCategory, filterDateRange, sortOrder]);
+
+  // Lista de Usuários Filtrada
+  const filteredProfiles = useMemo(() => {
+    return profiles.filter((p) => {
+      if (userRoleFilter !== "todos" && p.role !== userRoleFilter) return false;
+      if (userSearch.trim()) {
+        const q = userSearch.toLowerCase();
+        const matchesName = (p.full_name || "").toLowerCase().includes(q);
+        const matchesEmail = p.email.toLowerCase().includes(q);
+        if (!matchesName && !matchesEmail) return false;
+      }
+      return true;
+    });
+  }, [profiles, userRoleFilter, userSearch]);
+
+  // Histórico de Decisões
+  const historyAds = useMemo(() => {
+    return allAds
+      .filter((a) => a.status === "approved" || a.status === "rejected")
+      .sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
+  }, [allAds]);
 
   if (isLoading) {
     return (
@@ -306,486 +405,355 @@ function ModeracaoPage() {
       <Header />
 
       <main className="flex-1 w-full py-8 sm:py-12">
-        <div className="mx-auto w-[94%] max-w-[1440px]">
-          {/* Top Bar com Navegação e Badge do Papel */}
+        <div className="mx-auto w-[94%] max-w-[1520px]">
+          
+          {/* Header Superior com Identificação e Botões de Criação Rápida */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-6">
-            <div>
+            <div className="flex items-center gap-3">
+              <div className="grid size-12 place-items-center rounded-2xl border border-purple-500/30 bg-purple-500/20 text-purple-300 shadow-[0_0_24px_-4px_rgba(168,85,247,0.35)]">
+                {role === "admin" ? <Crown className="size-6" /> : <ShieldCheck className="size-6" />}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-bold text-foreground">
+                    Central de Gestão & Moderação {role === "admin" ? "Administrativa" : "Oficial"}
+                  </h1>
+                  <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-300">
+                    {role === "admin" ? "ADMIN TOTAL" : "MODERADOR"}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Gerencie, aprove, edite, crie ou apague anúncios, dados e usuários em tempo real no SHOP7.
+                </p>
+              </div>
+            </div>
+
+            {/* Ações de Topo: Criar Anúncio Direto & Adicionar Usuário */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAd(null);
+                  setIsAdModalOpen(true);
+                }}
+                className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 active:scale-95 transition-all"
+              >
+                <Plus className="size-4 stroke-[2.5]" />
+                <span>+ Novo Anúncio</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProfile(null);
+                  setIsUserModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-white/[0.1] bg-[#14151b] px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/50 hover:text-primary transition-all"
+              >
+                <UserPlus className="size-4" />
+                <span>+ Novo Usuário</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => loadData()}
+                className="grid size-9 place-items-center rounded-xl border border-white/[0.08] bg-[#121316] text-muted-foreground hover:text-foreground"
+                title="Recarregar dados"
+              >
+                <RefreshCw className={`size-4 ${loading ? "animate-spin text-primary" : ""}`} />
+              </button>
+
               <Link
                 to="/minha-conta"
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors pb-2"
+                className="flex items-center gap-1 rounded-xl border border-white/[0.08] bg-[#121316] px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
               >
                 <ArrowLeft className="size-3.5" />
-                <span>Voltar para Minha Conta</span>
+                <span>Voltar à Conta</span>
               </Link>
-              <div className="flex items-center gap-3">
-                <div className="grid size-10 place-items-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
-                  <ShieldCheck className="size-6" />
-                </div>
-                <div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-foreground">
-                    Central de Moderação SHOP7
-                  </h1>
-                  <p className="text-xs text-muted-foreground">
-                    Fila de aprovação de anúncios, filtros avançados e histórico completo de decisões.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Badges do Moderador */}
-            <div className="flex items-center gap-2.5 self-start sm:self-auto">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-bold uppercase tracking-wider ${
-                  role === "admin"
-                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                    : "bg-primary/20 text-primary border border-primary/30"
-                }`}
-              >
-                {role === "admin" ? <Crown className="size-3.5" /> : <ShieldCheck className="size-3.5" />}
-                {role === "admin" ? "Admin Supremo" : "Moderador Oficial"}
-              </span>
             </div>
           </div>
 
-          {/* PAINEL DE MÉTRICAS & CONTADOR DE AGUARDANDO APROVAÇÃO */}
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {/* Card 1: Contador de Anúncios Aguardando Aprovação (Destaque) */}
-            <div
-              onClick={() => setActiveTab("pendentes")}
-              className={`cursor-pointer rounded-3xl border p-4 sm:p-5 transition-all duration-300 relative overflow-hidden ${
-                activeTab === "pendentes"
-                  ? "border-yellow-500/50 bg-yellow-500/[0.08] shadow-[0_8px_30px_rgba(234,179,8,0.15)] ring-1 ring-yellow-500/30"
-                  : "border-white/[0.06] bg-[#0e0f13] hover:border-yellow-500/30"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Clock className="size-3.5 animate-spin-slow" /> Aguardando Aprovação
-                </span>
-                {pendingCount > 0 && (
-                  <span className="size-2 rounded-full bg-yellow-400 animate-ping" />
-                )}
-              </div>
-              <p className="mt-2 font-display text-2xl sm:text-3xl font-extrabold text-yellow-400">
-                {pendingCount}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {pendingCount === 1 ? "1 anúncio requer análise" : `${pendingCount} anúncios na fila ativa`}
-              </p>
-            </div>
-
-            {/* Card 2: Anúncios Aprovados */}
-            <div
-              onClick={() => {
-                setActiveTab("historico");
-                setFilterDecision("approved");
-              }}
-              className={`cursor-pointer rounded-3xl border p-4 sm:p-5 transition-all duration-300 ${
-                activeTab === "historico" && filterDecision === "approved"
-                  ? "border-primary/50 bg-primary/[0.08] shadow-[0_8px_30px_rgba(132,204,22,0.15)] ring-1 ring-primary/30"
-                  : "border-white/[0.06] bg-[#0e0f13] hover:border-primary/30"
-              }`}
-            >
-              <span className="text-[11px] font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="size-3.5" /> Aprovados
-              </span>
-              <p className="mt-2 font-display text-2xl sm:text-3xl font-extrabold text-primary">
-                {approvedCount}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Publicados no marketplace
-              </p>
-            </div>
-
-            {/* Card 3: Anúncios Rejeitados */}
-            <div
-              onClick={() => {
-                setActiveTab("historico");
-                setFilterDecision("rejected");
-              }}
-              className={`cursor-pointer rounded-3xl border p-4 sm:p-5 transition-all duration-300 ${
-                activeTab === "historico" && filterDecision === "rejected"
-                  ? "border-red-500/50 bg-red-500/[0.08] shadow-[0_8px_30px_rgba(239,68,68,0.15)] ring-1 ring-red-500/30"
-                  : "border-white/[0.06] bg-[#0e0f13] hover:border-red-500/30"
-              }`}
-            >
-              <span className="text-[11px] font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-                <XCircle className="size-3.5" /> Rejeitados
-              </span>
-              <p className="mt-2 font-display text-2xl sm:text-3xl font-extrabold text-red-400">
-                {rejectedCount}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Com motivo registrado
-              </p>
-            </div>
-
-            {/* Card 4: Total de Decisões */}
-            <div
-              onClick={() => {
-                setActiveTab("historico");
-                setFilterDecision("todos");
-              }}
-              className={`cursor-pointer rounded-3xl border p-4 sm:p-5 transition-all duration-300 ${
-                activeTab === "historico" && filterDecision === "todos"
-                  ? "border-white/20 bg-white/[0.05]"
-                  : "border-white/[0.06] bg-[#0e0f13] hover:border-white/15"
-              }`}
-            >
-              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Layers className="size-3.5" /> Total Avaliado
-              </span>
-              <p className="mt-2 font-display text-2xl sm:text-3xl font-extrabold text-foreground">
-                {decisionsCount}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Histórico de avaliações
-              </p>
-            </div>
-          </div>
-
-          {/* Toast / Alerta de Sucesso */}
+          {/* Notificação de Feedback */}
           {actionSuccessMsg && (
-            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-primary/30 bg-primary/10 p-4 text-xs text-primary shadow-lg animate-in fade-in">
+            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-primary/40 bg-primary/10 p-3.5 text-xs text-primary shadow-lg animate-in fade-in slide-in-from-top-2">
               <CheckCircle2 className="size-4 shrink-0" />
               <span className="font-semibold">{actionSuccessMsg}</span>
             </div>
           )}
 
-          {/* Abas da Moderação */}
-          <div className="mt-8 flex flex-wrap items-center gap-2 border-b border-white/[0.06] pb-3">
-            <button
-              type="button"
-              onClick={() => setActiveTab("pendentes")}
-              className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-semibold transition-all ${
-                activeTab === "pendentes"
-                  ? "bg-[#14151b] text-yellow-400 border border-yellow-500/30 shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Clock className="size-4" />
-              <span>Fila de Pendentes</span>
-              <span className="rounded-full bg-yellow-500/20 border border-yellow-500/30 px-2 py-0.5 text-[10px] font-bold text-yellow-400">
-                {pendingCount}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab("historico")}
-              className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-semibold transition-all ${
-                activeTab === "historico"
-                  ? "bg-[#14151b] text-primary border border-primary/30 shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Layers className="size-4" />
-              <span>Histórico de Decisões</span>
-              <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-muted-foreground">
-                {decisionsCount}
-              </span>
-            </button>
-
-            {/* Aba exclusiva para ADMIN: Gerenciar Usuários & Roles */}
-            {role === "admin" && (
-              <button
-                type="button"
-                onClick={() => setActiveTab("usuarios")}
-                className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-semibold transition-all ${
-                  activeTab === "usuarios"
-                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Crown className="size-4 text-purple-400" />
-                <span>Gestão de Usuários & Roles</span>
-                <span className="rounded-full bg-purple-500/30 px-2 py-0.5 text-[10px] text-purple-200 font-bold">
-                  Admin
-                </span>
-              </button>
-            )}
-          </div>
-
-          {/* BARRA DE FILTROS AVANÇADOS (CATEGORIA / TIPO / DATA / BUSCA) */}
-          {(activeTab === "pendentes" || activeTab === "historico") && (
-            <div className="mt-6 rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-4 sm:p-5">
-              <div className="flex flex-col gap-3">
-                {/* Linha 1: Campo de Busca e Ordenação */}
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <div className="relative w-full sm:flex-1">
-                    <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Buscar por título, anunciante, descrição ou motivo..."
-                      className="h-10 w-full rounded-2xl border border-white/[0.08] bg-[#14151b] pl-10 pr-4 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="flex w-full sm:w-auto items-center gap-2">
-                    <div className="flex items-center gap-1.5 rounded-2xl border border-white/[0.08] bg-[#14151b] px-3 py-2 text-xs">
-                      <Calendar className="size-3.5 text-muted-foreground" />
-                      <select
-                        value={filterDateRange}
-                        onChange={(e) => setFilterDateRange(e.target.value as any)}
-                        className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
-                      >
-                        <option value="todos">Qualquer data</option>
-                        <option value="hoje">Hoje (24 horas)</option>
-                        <option value="7dias">Últimos 7 dias</option>
-                        <option value="30dias">Últimos 30 dias</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 rounded-2xl border border-white/[0.08] bg-[#14151b] px-3 py-2 text-xs">
-                      <span className="text-muted-foreground text-[11px]">Ordem:</span>
-                      <select
-                        value={sortOrder}
-                        onChange={(e) => setSortOrder(e.target.value as any)}
-                        className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
-                      >
-                        <option value="recentes">Mais recentes</option>
-                        <option value="antigos">Mais antigos (Fila FIFO)</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Linha 2: Filtros por Tipo, Categoria e Decisão */}
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mr-1">
-                    Filtros:
-                  </span>
-
-                  {/* Filtro por Tipo */}
-                  <div className="flex rounded-xl border border-white/[0.08] bg-[#14151b] p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setFilterType("todos")}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
-                        filterType === "todos"
-                          ? "bg-primary text-black font-bold"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Todos os Tipos
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterType("item")}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
-                        filterType === "item"
-                          ? "bg-primary text-black font-bold"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Itens
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterType("servico")}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
-                        filterType === "servico"
-                          ? "bg-primary text-black font-bold"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Serviços
-                    </button>
-                  </div>
-
-                  {/* Filtro por Categoria */}
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="rounded-xl border border-white/[0.08] bg-[#14151b] px-3 py-1.5 text-xs text-foreground focus:border-primary/50 focus:outline-none cursor-pointer"
-                  >
-                    <option value="todas">Todas as Categorias</option>
-                    {CATEGORIES.map((c) => (
-                      <option key={c.slug} value={c.slug}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Filtro por Decisão (Aparece no Histórico) */}
-                  {activeTab === "historico" && (
-                    <select
-                      value={filterDecision}
-                      onChange={(e) => setFilterDecision(e.target.value as any)}
-                      className="rounded-xl border border-white/[0.08] bg-[#14151b] px-3 py-1.5 text-xs text-foreground focus:border-primary/50 focus:outline-none cursor-pointer"
-                    >
-                      <option value="todos">Todas as Decisões</option>
-                      <option value="approved">Somente Aprovados</option>
-                      <option value="rejected">Somente Rejeitados</option>
-                    </select>
-                  )}
-
-                  {/* Botão Limpar Filtros */}
-                  {hasActiveFilters && (
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="inline-flex items-center gap-1 rounded-xl border border-white/[0.1] bg-[#181922] px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-white/20 transition-all"
-                    >
-                      <RotateCcw className="size-3" />
-                      <span>Limpar Filtros</span>
-                    </button>
-                  )}
-
-                  {/* Contador de Resultados Filtrados */}
-                  <span className="ml-auto text-[11px] text-muted-foreground">
-                    Exibindo{" "}
-                    <strong className="text-foreground">
-                      {activeTab === "pendentes" ? filteredPendingAds.length : historyAds.length}
-                    </strong>{" "}
-                    anúncios
-                  </span>
-                </div>
-              </div>
+          {actionErrorMsg && (
+            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/10 p-3.5 text-xs text-red-400 shadow-lg animate-in fade-in slide-in-from-top-2">
+              <AlertTriangle className="size-4 shrink-0" />
+              <span className="font-semibold">{actionErrorMsg}</span>
             </div>
           )}
 
-          {/* CONTEÚDO 1: FILA DE ANÚNCIOS PENDENTES */}
+          {/* BARRA DE KPIS & MÉTRICAS EM TEMPO REAL */}
+          <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveTab("pendentes")}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                activeTab === "pendentes"
+                  ? "border-yellow-500 bg-yellow-500/[0.12] shadow-[0_0_20px_-4px_rgba(234,179,8,0.25)]"
+                  : "border-yellow-500/20 bg-yellow-500/[0.04] hover:border-yellow-500/40"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-yellow-400 flex items-center gap-1">
+                  <Clock className="size-3" /> Fila Pendente
+                </span>
+                {stats.pending > 0 && (
+                  <span className="gradient-lime size-2 rounded-full animate-ping" />
+                )}
+              </div>
+              <p className="mt-2 text-2xl font-bold font-display text-yellow-400">
+                {stats.pending}
+              </p>
+              <span className="text-[10px] text-muted-foreground">anúncios aguardando</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFilterStatus("approved");
+                setActiveTab("todos-anuncios");
+              }}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                activeTab === "todos-anuncios" && filterStatus === "approved"
+                  ? "border-emerald-500 bg-emerald-500/[0.12] shadow-[0_0_20px_-4px_rgba(16,185,129,0.25)]"
+                  : "border-emerald-500/20 bg-emerald-500/[0.04] hover:border-emerald-500/40"
+              }`}
+            >
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="size-3" /> Aprovados (Ativos)
+              </span>
+              <p className="mt-2 text-2xl font-bold font-display text-emerald-400">
+                {stats.approved}
+              </p>
+              <span className="text-[10px] text-muted-foreground">públicos no marketplace</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFilterStatus("rejected");
+                setActiveTab("todos-anuncios");
+              }}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                activeTab === "todos-anuncios" && filterStatus === "rejected"
+                  ? "border-red-500 bg-red-500/[0.12]"
+                  : "border-red-500/20 bg-red-500/[0.04] hover:border-red-500/40"
+              }`}
+            >
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-400 flex items-center gap-1">
+                <XCircle className="size-3" /> Rejeitados
+              </span>
+              <p className="mt-2 text-2xl font-bold font-display text-red-400">
+                {stats.rejected}
+              </p>
+              <span className="text-[10px] text-muted-foreground">recusados com motivo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("usuarios")}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                activeTab === "usuarios"
+                  ? "border-purple-500 bg-purple-500/[0.12] shadow-[0_0_20px_-4px_rgba(168,85,247,0.25)]"
+                  : "border-purple-500/20 bg-purple-500/[0.04] hover:border-purple-500/40"
+              }`}
+            >
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1">
+                <Users className="size-3" /> Usuários
+              </span>
+              <p className="mt-2 text-2xl font-bold font-display text-purple-300">
+                {stats.usersCount}
+              </p>
+              <span className="text-[10px] text-muted-foreground">perfis gerenciáveis</span>
+            </button>
+
+            <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 col-span-2 sm:col-span-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
+                <TrendingUp className="size-3" /> Volume em Anúncios
+              </span>
+              <p className="mt-2 text-xl sm:text-2xl font-bold font-display text-foreground">
+                {formatBRL(stats.totalValue)}
+              </p>
+              <span className="text-[10px] text-muted-foreground">em catálogo aprovado</span>
+            </div>
+          </div>
+
+          {/* NAVEGAÇÃO DE ABAS */}
+          <div className="mt-8 flex flex-wrap items-center gap-2 border-b border-white/[0.06] pb-3">
+            {[
+              { id: "pendentes", label: "Fila de Moderação", count: stats.pending, icon: Clock, badgeColor: "bg-yellow-500/20 text-yellow-400" },
+              { id: "todos-anuncios", label: "Todos os Anúncios", count: stats.total, icon: Package, badgeColor: "bg-white/[0.08] text-muted-foreground" },
+              { id: "usuarios", label: "Gestão de Usuários", count: stats.usersCount, icon: Users, badgeColor: "bg-purple-500/20 text-purple-300" },
+              { id: "historico", label: "Histórico de Decisões", count: historyAds.length, icon: Calendar, badgeColor: "bg-white/[0.08] text-muted-foreground" },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.id as typeof activeTab);
+                    if (tab.id === "todos-anuncios") {
+                      setSelectedUserFilter(null);
+                    }
+                  }}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+                    isActive
+                      ? "bg-[#14151b] text-primary border border-primary/40 shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.02]"
+                  }`}
+                >
+                  <Icon className="size-4" />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tab.badgeColor}`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ========================================================================= */}
+          {/* ABA 1: FILA DE MODERAÇÃO (PENDENTES) */}
+          {/* ========================================================================= */}
           {activeTab === "pendentes" && (
             <div className="mt-6">
-              <div className="pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex items-center justify-between pb-4">
                 <div>
                   <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                    <Clock className="size-4 text-yellow-400" />
-                    <span>Fila Operacional de Moderação</span>
+                    <span>Fila Prioritária de Moderação</span>
+                    <span className="rounded-full bg-yellow-500/20 border border-yellow-500/30 px-2 py-0.5 text-[10px] text-yellow-400 font-bold">
+                      {pendingAds.length} aguardando análise
+                    </span>
                   </h2>
                   <p className="text-xs text-muted-foreground">
-                    Anúncios que aguardam aprovação para entrar no marketplace. O público não tem acesso a eles enquanto não forem aprovados.
+                    Avalie itens e serviços antes que fiquem visíveis para todos os clientes da plataforma.
                   </p>
                 </div>
-                <span className="text-xs text-muted-foreground self-start sm:self-auto">
-                  Prioridade por tempo de submissão
-                </span>
               </div>
 
-              {loading ? (
-                <div className="py-16 text-center text-xs text-muted-foreground">
-                  Carregando fila de moderação...
-                </div>
-              ) : filteredPendingAds.length === 0 ? (
+              {pendingAds.length === 0 ? (
                 <div className="rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-12 text-center">
-                  <CheckCircle2 className="mx-auto size-12 text-primary/60" />
-                  <h3 className="mt-3 text-sm font-semibold text-foreground">
-                    {hasActiveFilters ? "Nenhum anúncio encontrado com os filtros aplicados." : "Fila de moderação limpa!"}
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {hasActiveFilters
-                      ? "Tente ajustar ou limpar seus filtros para visualizar mais itens."
-                      : "Todos os anúncios submetidos pelos usuários já foram avaliados e respondidos."}
+                  <CheckCircle2 className="mx-auto size-12 text-emerald-400" />
+                  <h3 className="mt-3 text-base font-bold text-foreground">Fila de moderação zerada!</h3>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+                    Não há anúncios pendentes de avaliação no momento. Todos os itens foram processados.
                   </p>
-                  {hasActiveFilters && (
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="mt-4 rounded-xl border border-white/[0.1] bg-[#14151b] px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/40"
-                    >
-                      Limpar Filtros
-                    </button>
-                  )}
                 </div>
               ) : (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {filteredPendingAds.map((ad) => (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {pendingAds.map((ad) => (
                     <div
                       key={ad.id}
-                      className="rounded-3xl border border-yellow-500/30 bg-[#0e0f13] p-5 shadow-xl flex flex-col justify-between hover:border-yellow-500/50 transition-all duration-300"
+                      className="group flex flex-col rounded-3xl border border-yellow-500/30 bg-[#0e0f13] overflow-hidden shadow-xl transition-all hover:border-yellow-500/60"
                     >
-                      <div>
-                        {/* Header do Card da Fila */}
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 text-[10px] font-bold text-yellow-400">
-                                <Clock className="size-3" /> {getRelativeTime(ad.created_at)}
-                              </span>
-                              <span className="rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                {ad.type === "item" ? "Item" : "Serviço"} · {ad.category}
-                              </span>
-                            </div>
-                            <h3 className="mt-2 text-base font-bold text-foreground line-clamp-1">
-                              {ad.title}
-                            </h3>
-                          </div>
-                          <span className="font-display text-lg font-bold text-primary shrink-0">
-                            {formatBRL(ad.price)}
-                          </span>
-                        </div>
-
-                        {/* Imagem de Pré-visualização se houver */}
-                        {ad.images?.[0] && (
-                          <div className="mt-3 relative h-40 w-full overflow-hidden rounded-2xl bg-black/40 border border-white/[0.04]">
-                            <img
-                              src={ad.images[0]}
-                              alt={ad.title}
-                              className="size-full object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setDetailAd(ad)}
-                              className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-black/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md hover:bg-black/90 transition-all"
-                            >
-                              <Eye className="size-3.5 text-primary" />
-                              <span>Ver Completo</span>
-                            </button>
+                      {/* Imagem do Anúncio */}
+                      <div className="relative aspect-[16/10] w-full bg-[#15171d] overflow-hidden">
+                        {ad.images?.[0] ? (
+                          <img
+                            src={ad.images[0]}
+                            alt={ad.title}
+                            className="size-full object-cover transition-transform group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="grid size-full place-items-center text-muted-foreground/40">
+                            <Store className="size-8" />
                           </div>
                         )}
 
-                        {/* Descrição resumida */}
-                        <div className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                          <p className="line-clamp-2">{ad.description}</p>
-                          {ad.additional_info && (
-                            <div className="mt-2 rounded-xl border border-white/[0.04] bg-[#14151a] p-2.5 text-[11px] text-foreground/80 line-clamp-2">
-                              <strong className="text-primary font-medium">Entrega:</strong>{" "}
-                              {ad.additional_info}
-                            </div>
-                          )}
+                        <div className="absolute left-2.5 top-2.5 flex items-center gap-1.5">
+                          <span className="rounded-md border border-yellow-500/40 bg-black/85 px-2 py-0.5 text-[10px] font-bold text-yellow-400 backdrop-blur-md flex items-center gap-1">
+                            <Clock className="size-3" /> {getRelativeTime(ad.created_at)}
+                          </span>
                         </div>
 
-                        {/* Vendedor, Estoque e Data */}
-                        <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground border-t border-white/[0.04] pt-2.5">
-                          <span>Vendedor: <strong className="text-foreground">{ad.seller_name || "Anunciante"}</strong></span>
-                          <span>Estoque: <strong className="text-foreground">{ad.stock}</strong></span>
-                          <span className="text-[10px] font-mono">{formatDate(ad.created_at)}</span>
-                        </div>
+                        <span className="absolute right-2.5 top-2.5 rounded-md border border-white/10 bg-black/80 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-md">
+                          {ad.type === "item" ? "Item" : "Serviço"}
+                        </span>
                       </div>
 
-                      {/* Botões de Ação na Fila */}
-                      <div className="mt-5 space-y-2 pt-3 border-t border-white/[0.06]">
-                        {/* Botão para Visualização Completa */}
-                        <button
-                          type="button"
-                          onClick={() => setDetailAd(ad)}
-                          className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-white/[0.08] bg-[#14151b] py-2 text-xs font-semibold text-foreground hover:border-primary/40 hover:text-primary transition-all"
-                        >
-                          <Eye className="size-3.5" />
-                          <span>Visualizar Anúncio Completo</span>
-                        </button>
+                      {/* Informações */}
+                      <div className="flex flex-1 flex-col p-4">
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span className="capitalize">{ad.category.replace(/-/g, " ")}</span>
+                          <span>Estoque: <strong>{ad.stock}</strong></span>
+                        </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setRejectingAd(ad)}
-                            className="flex items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-xs font-bold text-red-300 hover:bg-red-500/20 transition-colors"
-                          >
-                            <XCircle className="size-4" />
-                            <span>Rejeitar (motivo)</span>
-                          </button>
+                        <h3 className="mt-1 line-clamp-2 text-sm font-bold text-foreground">
+                          {ad.title}
+                        </h3>
 
-                          <button
-                            type="button"
-                            onClick={() => handleApprove(ad)}
-                            className="gradient-lime flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold text-black shadow-[0_4px_16px_rgba(132,204,22,0.35)] hover:brightness-110 active:scale-95 transition-all"
-                          >
-                            <CheckCircle2 className="size-4" />
-                            <span>Aprovar para Loja</span>
-                          </button>
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                          {ad.description}
+                        </p>
+
+                        <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground/80 py-1.5 border-y border-white/[0.04]">
+                          <span>Anunciante: <strong>{ad.seller_name || "Desconhecido"}</strong></span>
+                          <span>Preço: <strong className="text-primary font-display text-xs">{formatBRL(ad.price)}</strong></span>
+                        </div>
+
+                        {/* Botões de Ação de Moderação */}
+                        <div className="mt-auto pt-3 flex flex-col gap-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApprove(ad)}
+                              className="gradient-lime flex items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold text-black shadow-md hover:brightness-110 active:scale-95 transition-all"
+                            >
+                              <CheckCircle2 className="size-3.5 stroke-[2.5]" />
+                              <span>Aprovar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setRejectingAd(ad)}
+                              className="flex items-center justify-center gap-1 rounded-xl border border-red-500/40 bg-red-500/10 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20 active:scale-95 transition-all"
+                            >
+                              <XCircle className="size-3.5" />
+                              <span>Rejeitar</span>
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => setDetailAd(ad)}
+                              className="text-muted-foreground hover:text-foreground flex items-center gap-1"
+                            >
+                              <Eye className="size-3.5" /> Ver Detalhes
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingAd(ad);
+                                  setIsAdModalOpen(true);
+                                }}
+                                className="text-muted-foreground hover:text-primary flex items-center gap-1"
+                                title="Editar dados como admin"
+                              >
+                                <Edit className="size-3" /> Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAd(ad)}
+                                className="text-muted-foreground hover:text-red-400 flex items-center gap-1"
+                                title="Excluir"
+                              >
+                                <Trash2 className="size-3" /> Excluir
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -795,201 +763,463 @@ function ModeracaoPage() {
             </div>
           )}
 
-          {/* CONTEÚDO 2: HISTÓRICO DE DECISÕES */}
-          {activeTab === "historico" && (
-            <div className="mt-6">
-              <div className="pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div>
-                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                    <Layers className="size-4 text-primary" />
-                    <span>Histórico de Decisões de Moderação</span>
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Registro detalhado de todos os anúncios aprovados e rejeitados, com exibição obrigatória do motivo da recusa.
-                  </p>
+          {/* ========================================================================= */}
+          {/* ABA 2: TODOS OS ANÚNCIOS (GESTÃO COMPLETA) */}
+          {/* ========================================================================= */}
+          {activeTab === "todos-anuncios" && (
+            <div className="mt-6 space-y-4">
+              {/* Barra de Filtros Avançados */}
+              <div className="rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-4 sm:p-5">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-1 flex-wrap items-center gap-2.5">
+                    {/* Busca */}
+                    <div className="relative flex-1 min-w-[220px]">
+                      <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Buscar por título, vendedor, categoria..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#121317] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Filtro Status */}
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value as any)}
+                      className="h-10 rounded-xl border border-white/[0.08] bg-[#121317] px-3 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="todos">Todos os Status</option>
+                      <option value="approved">Aprovados (Ativos)</option>
+                      <option value="pending">Pendentes</option>
+                      <option value="rejected">Rejeitados</option>
+                    </select>
+
+                    {/* Filtro Categoria */}
+                    <select
+                      value={filterCategory}
+                      onChange={(e) => setFilterCategory(e.target.value)}
+                      className="h-10 rounded-xl border border-white/[0.08] bg-[#121317] px-3 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="todas">Todas as Categorias</option>
+                      {CATEGORIES.filter((c) => c.slug !== "all").map((c) => (
+                        <option key={c.slug} value={c.slug}>{c.name}</option>
+                      ))}
+                    </select>
+
+                    {/* Filtro Tipo */}
+                    <select
+                      value={filterType}
+                      onChange={(e) => setFilterType(e.target.value as any)}
+                      className="h-10 rounded-xl border border-white/[0.08] bg-[#121317] px-3 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="todos">Todos os Tipos</option>
+                      <option value="item">Itens / Produtos</option>
+                      <option value="servico">Serviços</option>
+                    </select>
+
+                    {/* Ordenação */}
+                    <select
+                      value={sortOrder}
+                      onChange={(e) => setSortOrder(e.target.value as any)}
+                      className="h-10 rounded-xl border border-white/[0.08] bg-[#121317] px-3 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="recentes">Mais recentes</option>
+                      <option value="antigos">Mais antigos</option>
+                      <option value="maior_preco">Maior preço</option>
+                      <option value="menor_preco">Menor preço</option>
+                    </select>
+                  </div>
+
+                  {selectedUserFilter && (
+                    <div className="flex items-center gap-2 rounded-xl bg-purple-500/10 border border-purple-500/30 px-3 py-1.5 text-xs text-purple-300">
+                      <span>Filtro de Usuário Ativo</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserFilter(null)}
+                        className="rounded-lg p-0.5 hover:bg-purple-500/20"
+                      >
+                        <XCircle className="size-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingAd(null);
+                      setIsAdModalOpen(true);
+                    }}
+                    className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black self-start lg:self-auto shrink-0"
+                  >
+                    <Plus className="size-3.5" />
+                    <span>Publicar Novo Anúncio</span>
+                  </button>
                 </div>
               </div>
 
-              {historyAds.length === 0 ? (
-                <div className="rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-12 text-center">
-                  <Layers className="mx-auto size-12 text-muted-foreground/40" />
-                  <h3 className="mt-3 text-sm font-semibold text-foreground">
-                    Nenhum registro encontrado no histórico.
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {hasActiveFilters ? "Tente ajustar os filtros acima." : "As decisões de moderação tomadas aparecerão listadas aqui."}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-3xl border border-white/[0.06] bg-[#0c0d10]">
-                  <table className="w-full text-left text-xs">
-                    <thead className="border-b border-white/[0.06] bg-[#101115] text-[11px] uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-3.5">Anúncio</th>
-                        <th className="px-4 py-3.5">Preço</th>
-                        <th className="px-4 py-3.5">Vendedor</th>
-                        <th className="px-4 py-3.5">Decisão & Motivo</th>
-                        <th className="px-4 py-3.5">Data da Decisão</th>
-                        <th className="px-4 py-3.5 text-right">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/[0.04]">
-                      {historyAds.map((ad) => (
-                        <tr key={ad.id} className="hover:bg-white/[0.02] transition-colors">
-                          {/* Anúncio */}
-                          <td className="px-4 py-3.5 font-medium text-foreground max-w-xs">
-                            <p className="truncate font-semibold text-foreground">{ad.title}</p>
-                            <span className="text-[10px] text-muted-foreground">
-                              {ad.type === "item" ? "Item" : "Serviço"} · {ad.category}
-                            </span>
-                          </td>
+              {/* Tabela / Cards de Anúncios */}
+              <div className="grid gap-3">
+                {filteredAdsList.length === 0 ? (
+                  <div className="rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-12 text-center text-xs text-muted-foreground">
+                    Nenhum anúncio encontrado para estes filtros.
+                  </div>
+                ) : (
+                  filteredAdsList.map((ad) => (
+                    <div
+                      key={ad.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="relative size-16 shrink-0 rounded-xl overflow-hidden bg-[#15171d] border border-white/10">
+                          {ad.images?.[0] ? (
+                            <img src={ad.images[0]} alt={ad.title} className="size-full object-cover" />
+                          ) : (
+                            <Store className="size-6 text-muted-foreground/50 m-auto mt-5" />
+                          )}
+                        </div>
 
-                          {/* Preço */}
-                          <td className="px-4 py-3.5 font-bold font-display text-primary whitespace-nowrap">
-                            {formatBRL(ad.price)}
-                          </td>
-
-                          {/* Vendedor */}
-                          <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
-                            {ad.seller_name || "Vendedor"}
-                          </td>
-
-                          {/* Decisão & Motivo da Rejeição */}
-                          <td className="px-4 py-3.5 max-w-sm">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
                             {ad.status === "approved" && (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-primary/20 border border-primary/30 px-2 py-0.5 text-[10px] font-bold text-primary">
-                                <CheckCircle2 className="size-3" /> Aprovado (Ativo)
+                              <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                                Aprovado
                               </span>
                             )}
-
-                            {ad.status === "rejected" && (
-                              <div>
-                                <span className="inline-flex items-center gap-1 rounded-md bg-red-500/20 border border-red-500/30 px-2 py-0.5 text-[10px] font-bold text-red-400">
-                                  <XCircle className="size-3" /> Rejeitado
-                                </span>
-                                {ad.rejection_reason && (
-                                  <div className="mt-1.5 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-[11px] text-red-300">
-                                    <strong className="text-red-400 font-semibold block text-[10px] uppercase">
-                                      Motivo da Recusa:
-                                    </strong>
-                                    <span className="line-clamp-2">"{ad.rejection_reason}"</span>
-                                  </div>
-                                )}
-                              </div>
+                            {ad.status === "pending" && (
+                              <span className="rounded-full bg-yellow-500/15 border border-yellow-500/30 px-2 py-0.5 text-[10px] font-bold text-yellow-400">
+                                Pendente
+                              </span>
                             )}
-                          </td>
+                            {ad.status === "rejected" && (
+                              <span className="rounded-full bg-red-500/15 border border-red-500/30 px-2 py-0.5 text-[10px] font-bold text-red-400">
+                                Rejeitado
+                              </span>
+                            )}
+                            <span className="text-[10px] text-muted-foreground capitalize">
+                              {ad.category.replace(/-/g, " ")} · {ad.type}
+                            </span>
+                          </div>
 
-                          {/* Data da Moderação */}
-                          <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap font-mono text-[11px]">
-                            {formatDate(ad.moderated_at || ad.updated_at)}
-                          </td>
+                          <h4 className="mt-1 text-sm font-bold text-foreground">{ad.title}</h4>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                            <span>Vendedor: <strong className="text-foreground">{ad.seller_name || "Vendedor"}</strong></span>
+                            <span>·</span>
+                            <span>Estoque: <strong>{ad.stock}</strong></span>
+                            <span>·</span>
+                            <span>Cadastrado em: {formatDate(ad.created_at)}</span>
+                          </div>
 
-                          {/* Ações */}
-                          <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* Botão Ver Completo */}
-                              <button
-                                type="button"
-                                onClick={() => setDetailAd(ad)}
-                                className="rounded-lg border border-white/[0.08] bg-[#14151b] px-2.5 py-1 text-[11px] font-medium text-foreground hover:border-primary/40 hover:text-primary transition-all flex items-center gap-1"
-                              >
-                                <Eye className="size-3" />
-                                <span>Ver</span>
-                              </button>
+                          {ad.rejection_reason && (
+                            <p className="mt-1 text-[11px] text-red-400">
+                              <strong>Motivo:</strong> {ad.rejection_reason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
 
-                              {/* Alterar Decisão */}
-                              {ad.status === "approved" && (
-                                <button
-                                  type="button"
-                                  onClick={() => setRejectingAd(ad)}
-                                  className="rounded-lg border border-red-500/30 px-2.5 py-1 text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-                                >
-                                  Revogar
-                                </button>
-                              )}
+                      {/* Ações e Preço */}
+                      <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t sm:border-t-0 border-white/[0.04] pt-2 sm:pt-0">
+                        <span className="text-base font-bold font-display text-primary">
+                          {formatBRL(ad.price)}
+                        </span>
 
-                              {ad.status === "rejected" && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleApprove(ad)}
-                                  className="rounded-lg bg-primary/20 border border-primary/30 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/30 transition-colors"
-                                >
-                                  Re-aprovar
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                        <div className="flex items-center gap-1.5">
+                          {/* Botões de Alteração Rápida de Status */}
+                          {ad.status !== "approved" && (
+                            <button
+                              type="button"
+                              onClick={() => handleSetStatus(ad, "approved")}
+                              className="rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold text-emerald-400 hover:bg-emerald-500/25 transition-all"
+                              title="Aprovar Anúncio"
+                            >
+                              Aprovar
+                            </button>
+                          )}
+
+                          {ad.status !== "rejected" && (
+                            <button
+                              type="button"
+                              onClick={() => setRejectingAd(ad)}
+                              className="rounded-lg bg-red-500/15 border border-red-500/30 px-2.5 py-1 text-[11px] font-bold text-red-400 hover:bg-red-500/25 transition-all"
+                              title="Rejeitar Anúncio"
+                            >
+                              Rejeitar
+                            </button>
+                          )}
+
+                          {ad.status !== "pending" && (
+                            <button
+                              type="button"
+                              onClick={() => handleSetStatus(ad, "pending")}
+                              className="rounded-lg bg-yellow-500/15 border border-yellow-500/30 px-2.5 py-1 text-[11px] font-bold text-yellow-400 hover:bg-yellow-500/25 transition-all"
+                              title="Mudar para Pendente"
+                            >
+                              Pendente
+                            </button>
+                          )}
+
+                          {/* Editar Anúncio */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAd(ad);
+                              setIsAdModalOpen(true);
+                            }}
+                            className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-primary transition-colors"
+                            title="Editar Dados Completos do Anúncio"
+                          >
+                            <Edit className="size-3.5" />
+                          </button>
+
+                          {/* Excluir Anúncio */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAd(ad)}
+                            className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-red-400 transition-colors"
+                            title="Excluir Anúncio Definitivamente"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
 
-          {/* CONTEÚDO 3 (ADMIN): GESTÃO DE USUÁRIOS E ROLES */}
-          {activeTab === "usuarios" && role === "admin" && (
-            <div className="mt-6">
-              <div className="pb-4">
-                <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                  <Crown className="size-4 text-purple-400" />
-                  <span>Painel Administrativo: Gestão de Usuários & Roles</span>
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Gerencie permissões de membros da plataforma entre <strong>User</strong>, <strong>Moderador</strong> e <strong>Admin</strong>.
-                </p>
+          {/* ========================================================================= */}
+          {/* ABA 3: GESTÃO DE USUÁRIOS (ADMIN & MOD) */}
+          {/* ========================================================================= */}
+          {activeTab === "usuarios" && (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-1 items-center gap-2.5">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por nome ou e-mail de usuário..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#121317] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
+                    />
+                  </div>
+
+                  <select
+                    value={userRoleFilter}
+                    onChange={(e) => setUserRoleFilter(e.target.value as any)}
+                    className="h-10 rounded-xl border border-white/[0.08] bg-[#121317] px-3 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                  >
+                    <option value="todos">Todos os Papéis</option>
+                    <option value="admin">Administradores</option>
+                    <option value="moderator">Moderadores</option>
+                    <option value="user">Membros (Users)</option>
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingProfile(null);
+                    setIsUserModalOpen(true);
+                  }}
+                  className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shrink-0 self-start sm:self-auto"
+                >
+                  <UserPlus className="size-3.5 stroke-[2.5]" />
+                  <span>Cadastrar Usuário</span>
+                </button>
               </div>
 
-              <div className="overflow-x-auto rounded-3xl border border-white/[0.06] bg-[#0c0d10]">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-white/[0.06] bg-[#101115] text-[11px] uppercase tracking-wider text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3.5">Usuário</th>
-                      <th className="px-4 py-3.5">E-mail</th>
-                      <th className="px-4 py-3.5">Papel Atual (Role)</th>
-                      <th className="px-4 py-3.5 text-right">Alterar Permissão</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.04]">
-                    {profiles.map((p) => (
-                      <tr key={p.id} className="hover:bg-white/[0.02]">
-                        <td className="px-4 py-3.5 font-medium text-foreground">
-                          {p.full_name || "Sem nome"}
-                        </td>
-                        <td className="px-4 py-3.5 text-muted-foreground">{p.email}</td>
-                        <td className="px-4 py-3.5">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                              p.role === "admin"
-                                ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                                : p.role === "moderator"
-                                ? "bg-primary/20 text-primary border border-primary/30"
-                                : "bg-white/[0.06] text-muted-foreground"
-                            }`}
+              {/* Tabela de Usuários */}
+              <div className="grid gap-3">
+                {filteredProfiles.map((p) => {
+                  const userAdsCount = allAds.filter((a) => a.user_id === p.id).length;
+                  const isCurrentLoggedUser = p.id === user?.id;
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="relative size-12 shrink-0 rounded-2xl overflow-hidden bg-[#15171d] border border-white/10 grid place-items-center font-bold text-primary text-base">
+                          {p.avatar_url ? (
+                            <img src={p.avatar_url} alt={p.full_name || "Avatar"} className="size-full object-cover" />
+                          ) : (
+                            ((p.full_name || p.email)?.[0] || "U").toUpperCase()
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-sm font-bold text-foreground">
+                              {p.full_name || "Sem Nome Cadastrado"}
+                            </h4>
+                            {isCurrentLoggedUser && (
+                              <span className="rounded-full bg-primary/20 border border-primary/30 px-2 py-0.2 text-[9px] font-bold text-primary">
+                                VOCÊ
+                              </span>
+                            )}
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                p.role === "admin"
+                                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                                  : p.role === "moderator"
+                                  ? "bg-primary/20 text-primary border border-primary/30"
+                                  : "bg-white/[0.06] text-muted-foreground border border-white/[0.08]"
+                              }`}
+                            >
+                              {p.role === "admin" ? "Admin" : p.role === "moderator" ? "Moderador" : "Membro"}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                            <span>E-mail: <strong className="text-foreground">{p.email}</strong></span>
+                            <span>·</span>
+                            <span>Anúncios: <strong>{userAdsCount}</strong></span>
+                            <span>·</span>
+                            <span>Criado em: {formatDate(p.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Ações por Usuário */}
+                      <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t sm:border-t-0 border-white/[0.04] pt-2 sm:pt-0">
+                        <div className="flex items-center gap-2">
+                          {/* Seletor rápido de papel (Apenas Admin) */}
+                          {role === "admin" ? (
+                            <select
+                              value={p.role}
+                              onChange={(e) => handleRoleChange(p.id, e.target.value as UserRole)}
+                              className="h-8 rounded-lg border border-white/[0.08] bg-[#14151b] px-2 text-[11px] font-semibold text-foreground focus:border-primary/50 focus:outline-none"
+                            >
+                              <option value="user">Membro (User)</option>
+                              <option value="moderator">Moderador</option>
+                              <option value="admin">Administrador</option>
+                            </select>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">Papel fixado</span>
+                          )}
+
+                          {/* Ver anúncios do usuário */}
+                          {userAdsCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleFilterByUser(p.id, p.full_name || p.email)}
+                              className="rounded-lg border border-white/[0.08] bg-[#14151b] px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                              title="Ver todos os anúncios deste usuário"
+                            >
+                              Ver {userAdsCount} anúncios
+                            </button>
+                          )}
+
+                          {/* Editar Usuário */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingProfile(p);
+                              setIsUserModalOpen(true);
+                            }}
+                            className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-primary transition-colors"
+                            title="Editar Informações do Usuário"
                           >
-                            {p.role === "admin" && <Crown className="size-3" />}
-                            {p.role === "moderator" && <ShieldCheck className="size-3" />}
-                            {p.role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 text-right">
-                          <select
-                            value={p.role}
-                            onChange={(e) =>
-                              handleRoleChange(p.id, e.target.value as UserRole)
-                            }
-                            className="rounded-xl border border-white/[0.08] bg-[#14151b] px-3 py-1 text-xs text-foreground focus:border-primary/50 focus:outline-none cursor-pointer"
-                          >
-                            <option value="user">User (Membro)</option>
-                            <option value="moderator">Moderator (Moderador)</option>
-                            <option value="admin">Admin (Administrador)</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            <Edit className="size-3.5" />
+                          </button>
+
+                          {/* Excluir Usuário (Apenas Admin) */}
+                          {role === "admin" && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(p)}
+                              disabled={isCurrentLoggedUser}
+                              className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                              title={isCurrentLoggedUser ? "Você não pode excluir sua própria conta ativa" : "Excluir Usuário"}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* ABA 4: HISTÓRICO DE DECISÕES */}
+          {/* ========================================================================= */}
+          {activeTab === "historico" && (
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center justify-between pb-2">
+                <div>
+                  <h2 className="text-base font-bold text-foreground">Registro de Auditoria de Moderação</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Acompanhe todas as decisões de aprovação e rejeição registradas no SHOP7.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {historyAds.length === 0 ? (
+                  <div className="rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-12 text-center text-xs text-muted-foreground">
+                    Nenhuma decisão registrada no histórico.
+                  </div>
+                ) : (
+                  historyAds.map((ad) => (
+                    <div
+                      key={ad.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1">
+                          {ad.status === "approved" ? (
+                            <CheckCircle2 className="size-5 text-emerald-400" />
+                          ) : (
+                            <XCircle className="size-5 text-red-400" />
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              ad.status === "approved" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
+                            }`}>
+                              {ad.status === "approved" ? "APROVADO" : "REJEITADO"}
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">{ad.title}</span>
+                          </div>
+
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            <span>Vendedor: {ad.seller_name || "Vendedor"} · Preço: {formatBRL(ad.price)}</span>
+                          </div>
+
+                          {ad.rejection_reason && (
+                            <p className="mt-1.5 rounded-lg bg-red-500/10 border border-red-500/20 p-2 text-[11px] text-red-400">
+                              <strong>Motivo registrado:</strong> {ad.rejection_reason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between text-[11px] text-muted-foreground">
+                        <span>Atualizado: {formatDate(ad.updated_at || ad.created_at)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setDetailAd(ad)}
+                          className="text-primary hover:underline text-xs font-semibold mt-1"
+                        >
+                          Ver Detalhes
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -998,14 +1228,14 @@ function ModeracaoPage() {
 
       <Footer />
 
-      {/* Modal de Detalhes Completos do Anúncio */}
+      {/* Modal de Detalhes Completos */}
       <AdDetailModal
         ad={detailAd}
         isOpen={Boolean(detailAd)}
         onClose={() => setDetailAd(null)}
         onApprove={(ad) => {
-          setDetailAd(null);
           handleApprove(ad);
+          setDetailAd(null);
         }}
         onReject={(ad) => {
           setDetailAd(null);
@@ -1015,10 +1245,39 @@ function ModeracaoPage() {
 
       {/* Modal de Rejeição com Motivo */}
       <RejectModal
+        adTitle={rejectingAd?.title || ""}
         isOpen={Boolean(rejectingAd)}
         onClose={() => setRejectingAd(null)}
         onConfirm={handleConfirmReject}
-        adTitle={rejectingAd?.title || ""}
+      />
+
+      {/* Modal de Criação / Edição de Anúncio com Permissões de Admin/Mod */}
+      <CreateAdModal
+        isOpen={isAdModalOpen}
+        onClose={() => {
+          setIsAdModalOpen(false);
+          setEditingAd(null);
+        }}
+        onSuccess={() => {
+          showFeedback("Anúncio salvo com sucesso pelo painel administrativo!");
+          loadData();
+        }}
+        initialAd={editingAd}
+        isAdminMode={true}
+      />
+
+      {/* Modal de Criação / Edição de Usuários */}
+      <UserModal
+        isOpen={isUserModalOpen}
+        onClose={() => {
+          setIsUserModalOpen(false);
+          setEditingProfile(null);
+        }}
+        onSuccess={(p) => {
+          showFeedback(`Usuário "${p.full_name || p.email}" salvo com sucesso!`);
+          loadData();
+        }}
+        initialProfile={editingProfile}
       />
     </div>
   );

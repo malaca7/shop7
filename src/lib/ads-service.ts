@@ -434,33 +434,81 @@ export const AdsService = {
 
   // 10. Alterar Role do Usuário (Admin)
   async updateUserRole(userId: string, newRole: UserRole): Promise<Profile> {
+    return this.updateProfileData(userId, { role: newRole });
+  },
+
+  // 11. Criar novo usuário (Admin / Moderador)
+  async createProfile(data: {
+    email: string;
+    full_name?: string;
+    avatar_url?: string | null;
+    role?: UserRole;
+  }): Promise<Profile> {
+    const newProfile: Profile = {
+      id: "user-" + Date.now(),
+      email: data.email.trim(),
+      full_name: data.full_name?.trim() || data.email.split("@")[0],
+      avatar_url: data.avatar_url || null,
+      role: data.role || "user",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isLiveSupabaseConfigured) {
+      try {
+        const { data: dbData, error } = await supabase
+          .from("profiles")
+          .insert([newProfile])
+          .select()
+          .single();
+        if (!error && dbData) {
+          const profiles = getLocalProfiles();
+          profiles.unshift(dbData);
+          saveLocalProfiles(profiles);
+          return dbData;
+        }
+      } catch (err) {
+        console.warn("Supabase indisponível em createProfile, salvando localmente:", err);
+      }
+    }
+
+    const profiles = getLocalProfiles();
+    profiles.unshift(newProfile);
+    saveLocalProfiles(profiles);
+    return newProfile;
+  },
+
+  // 12. Atualizar qualquer perfil por completo (Admin / Moderador)
+  async updateProfileData(userId: string, data: Partial<Profile>): Promise<Profile> {
+    const changes = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    };
+
     let updatedFromDb: Profile | null = null;
     if (isLiveSupabaseConfigured) {
       try {
-        const { data, error } = await supabase
+        const { data: dbData, error } = await supabase
           .from("profiles")
-          .update({ role: newRole, updated_at: new Date().toISOString() })
+          .update(changes)
           .eq("id", userId)
           .select()
           .single();
-        if (!error && data) {
-          updatedFromDb = data;
-        } else {
-          console.warn("Falha ao atualizar papel no Supabase, salvando localmente:", error?.message);
+        if (!error && dbData) {
+          updatedFromDb = dbData;
         }
       } catch (err) {
-        console.warn("Supabase indisponível em updateUserRole, salvando localmente:", err);
+        console.warn("Supabase indisponível em updateProfileData:", err);
       }
     }
 
     const profiles = getLocalProfiles();
     const index = profiles.findIndex((p) => p.id === userId);
     if (index !== -1) {
-      const existingProf = profiles[index];
+      const existing = profiles[index];
       const updatedProf: Profile = updatedFromDb || {
-        ...existingProf,
-        role: newRole,
-        updated_at: new Date().toISOString(),
+        ...existing,
+        ...changes,
       };
       profiles[index] = updatedProf;
       saveLocalProfiles(profiles);
@@ -469,5 +517,123 @@ export const AdsService = {
 
     if (updatedFromDb) return updatedFromDb;
     throw new Error("Usuário não encontrado");
+  },
+
+  // 13. Excluir usuário e opcionalmente seus dados (Admin / Moderador)
+  async deleteProfile(userId: string): Promise<boolean> {
+    if (isLiveSupabaseConfigured) {
+      try {
+        await supabase.from("profiles").delete().eq("id", userId);
+      } catch (err) {
+        console.warn("Supabase indisponível em deleteProfile:", err);
+      }
+    }
+
+    const profiles = getLocalProfiles().filter((p) => p.id !== userId);
+    saveLocalProfiles(profiles);
+
+    // Remove os anúncios associados ao usuário excluído
+    const ads = getLocalAds().filter((a) => a.user_id !== userId);
+    saveLocalAds(ads);
+
+    return true;
+  },
+
+  // 14. Criar anúncio diretamente com permissão de Moderador ou Admin
+  async adminCreateAd(
+    adData: Omit<Ad, "id" | "created_at" | "updated_at"> & { status?: AdStatus }
+  ): Promise<Ad> {
+    const payload: Omit<Ad, "id"> = {
+      ...adData,
+      status: adData.status || ("approved" as const),
+      rejection_reason: adData.rejection_reason || null,
+      moderated_by: adData.moderated_by || null,
+      moderated_at: adData.status === "approved" ? new Date().toISOString() : null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isLiveSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from("ads").insert([payload]).select().single();
+        if (!error && data) {
+          const ads = getLocalAds();
+          ads.unshift(data);
+          saveLocalAds(ads);
+          return data;
+        }
+      } catch (e: any) {
+        console.warn("Exceção no Supabase adminCreateAd:", e.message);
+      }
+    }
+
+    const newAd: Ad = {
+      ...payload,
+      id: "ad-" + Date.now(),
+    };
+    const ads = getLocalAds();
+    ads.unshift(newAd);
+    saveLocalAds(ads);
+    return newAd;
+  },
+
+  // 15. Atualizar qualquer campo de anúncio diretamente (Admin / Moderador)
+  async adminUpdateAd(id: string, updateData: Partial<Ad>): Promise<Ad> {
+    const changes = {
+      ...updateData,
+      updated_at: new Date().toISOString(),
+    };
+
+    let updatedFromDb: Ad | null = null;
+    if (isLiveSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from("ads")
+          .update(changes)
+          .eq("id", id)
+          .select()
+          .single();
+        if (!error && data) {
+          updatedFromDb = data;
+        }
+      } catch (err) {
+        console.warn("Supabase indisponível em adminUpdateAd, salvando localmente:", err);
+      }
+    }
+
+    const ads = getLocalAds();
+    const index = ads.findIndex((a) => a.id === id);
+    if (index !== -1) {
+      const existing = ads[index];
+      const updatedAd: Ad = updatedFromDb || {
+        ...existing,
+        ...changes,
+        id: existing.id,
+      };
+      ads[index] = updatedAd;
+      saveLocalAds(ads);
+      return updatedAd;
+    }
+
+    if (updatedFromDb) return updatedFromDb;
+    throw new Error("Anúncio não encontrado");
+  },
+
+  // 16. Métricas da plataforma em tempo real
+  getStats() {
+    const ads = getLocalAds();
+    const profiles = getLocalProfiles();
+    const approved = ads.filter((a) => a.status === "approved");
+    const pending = ads.filter((a) => a.status === "pending");
+    const rejected = ads.filter((a) => a.status === "rejected");
+    const totalValue = approved.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+    return {
+      totalAds: ads.length,
+      approvedCount: approved.length,
+      pendingCount: pending.length,
+      rejectedCount: rejected.length,
+      totalUsers: profiles.length,
+      totalValue,
+    };
   },
 };

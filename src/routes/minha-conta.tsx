@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   User,
   Plus,
@@ -19,6 +19,12 @@ import {
   Store,
   Layers,
   Sparkles,
+  Wallet,
+  TrendingUp,
+  Receipt,
+  FileText,
+  BadgeCheck,
+  Search,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
@@ -26,15 +32,49 @@ import { Footer } from "@/components/layout/Footer";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { CreateAdModal } from "@/components/ads/CreateAdModal";
 import { AdsService } from "@/lib/ads-service";
-import type { Ad } from "@/lib/supabase";
+import type { Ad, UserRole } from "@/lib/supabase";
 import { formatBRL } from "@/data/catalog";
 
 export const Route = createFileRoute("/minha-conta")({
   head: () => ({
-    meta: [{ title: "Minha Conta — SHOP7" }],
+    meta: [{ title: "Minha Conta & Painel — SHOP7" }],
   }),
   component: MinhaContaPage,
 });
+
+// Pedidos simulados realistas para a aba de compras do usuário
+interface UserOrder {
+  id: string;
+  title: string;
+  category: string;
+  price: number;
+  date: string;
+  status: "completed" | "in_transit" | "processing";
+  seller: string;
+  code?: string;
+}
+
+const DEMO_ORDERS: UserOrder[] = [
+  {
+    id: "PED-98214",
+    title: "Chave Global de Ativação · Cyberpunk 2077 Phantom Liberty",
+    category: "jogos-digitais",
+    price: 139.90,
+    date: new Date(Date.now() - 86400000 * 3).toISOString(),
+    status: "completed",
+    seller: "KeyMaster Oficial",
+    code: "GOG-CYBER-8842-XPL9-9121",
+  },
+  {
+    id: "PED-74190",
+    title: "Mousepad Gamer Extra Grande 900x400mm Speed Dark",
+    category: "produtos-fisicos",
+    price: 89.00,
+    date: new Date(Date.now() - 86400000 * 7).toISOString(),
+    status: "completed",
+    seller: "ProGaming Brasil",
+  },
+];
 
 function MinhaContaPage() {
   const { user, profile, role, signOut, updateProfile, switchRoleForDemo, isLoading } = useAuth();
@@ -46,11 +86,14 @@ function MinhaContaPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingAd, setEditingAd] = useState<Ad | null>(null);
   const [loadingAds, setLoadingAds] = useState(false);
+  const [adFilter, setAdFilter] = useState<"todos" | "approved" | "pending" | "rejected">("todos");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Edição de Perfil
   const [editName, setEditName] = useState(profile?.full_name || "");
+  const [editAvatar, setEditAvatar] = useState(profile?.avatar_url || "");
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
-  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [profileMsg, setProfileMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Redireciona para /auth caso não esteja logado
   useEffect(() => {
@@ -80,13 +123,12 @@ function MinhaContaPage() {
 
   useEffect(() => {
     loadData();
-    if (profile?.full_name) {
-      setEditName(profile.full_name);
-    }
+    if (profile?.full_name) setEditName(profile.full_name);
+    if (profile?.avatar_url) setEditAvatar(profile.avatar_url);
   }, [user, role, profile]);
 
   const handleDeleteAd = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este anúncio?")) return;
+    if (!confirm("Tem certeza que deseja excluir permanentemente este anúncio?")) return;
     try {
       await AdsService.deleteAd(id);
       setMyAds((prev) => prev.filter((a) => a.id !== id));
@@ -100,14 +142,47 @@ function MinhaContaPage() {
     setIsUpdatingProfile(true);
     setProfileMsg(null);
     try {
-      await updateProfile({ full_name: editName.trim() });
-      setProfileMsg("Perfil atualizado com sucesso!");
+      await updateProfile({
+        full_name: editName.trim(),
+        avatar_url: editAvatar.trim() || null,
+      });
+      setProfileMsg({ type: "success", text: "Perfil atualizado com sucesso!" });
+      setTimeout(() => setProfileMsg(null), 4000);
     } catch (err) {
-      setProfileMsg("Erro ao atualizar perfil.");
+      setProfileMsg({ type: "error", text: "Erro ao atualizar dados do perfil." });
     } finally {
       setIsUpdatingProfile(false);
     }
   };
+
+  // Métricas do Usuário
+  const userStats = useMemo(() => {
+    const total = myAds.length;
+    const approved = myAds.filter((a) => a.status === "approved").length;
+    const pending = myAds.filter((a) => a.status === "pending").length;
+    const rejected = myAds.filter((a) => a.status === "rejected").length;
+    const totalValue = myAds
+      .filter((a) => a.status === "approved")
+      .reduce((acc, curr) => acc + (Number(curr.price) || 0) * (Number(curr.stock) || 1), 0);
+
+    return { total, approved, pending, rejected, totalValue };
+  }, [myAds]);
+
+  // Anúncios filtrados
+  const filteredAds = useMemo(() => {
+    return myAds.filter((ad) => {
+      if (adFilter !== "todos" && ad.status !== adFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          ad.title.toLowerCase().includes(q) ||
+          ad.description.toLowerCase().includes(q) ||
+          ad.category.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [myAds, adFilter, searchQuery]);
 
   if (isLoading || !user) {
     return (
@@ -126,14 +201,15 @@ function MinhaContaPage() {
 
       <main className="flex-1 w-full py-8 sm:py-12">
         <div className="mx-auto w-[94%] max-w-[1400px]">
-          {/* Header do Usuário / Perfil */}
-          <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-6 sm:p-8">
+          
+          {/* 1. Header do Usuário / Card de Identificação */}
+          <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-6 sm:p-8 shadow-2xl">
             <div className="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-primary/10 blur-3xl" />
 
             <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
               {/* Avatar & Identificação */}
               <div className="flex items-center gap-4">
-                <div className="relative grid size-16 sm:size-20 place-items-center rounded-2xl bg-[#15171d] border border-white/[0.08] text-2xl font-bold font-display text-primary">
+                <div className="relative grid size-16 sm:size-20 place-items-center rounded-2xl bg-[#15171d] border border-white/[0.08] text-2xl font-bold font-display text-primary shadow-inner">
                   {profile?.avatar_url ? (
                     <img
                       src={profile.avatar_url}
@@ -144,19 +220,19 @@ function MinhaContaPage() {
                     ((profile?.full_name || user.email)?.[0] || "U").toUpperCase()
                   )}
                   {role === "admin" && (
-                    <span className="absolute -bottom-1 -right-1 grid size-6 place-items-center rounded-full bg-purple-600 text-white shadow-md">
+                    <span className="absolute -bottom-1 -right-1 grid size-6 place-items-center rounded-full bg-purple-600 text-white shadow-md" title="Administrador">
                       <Crown className="size-3.5" />
                     </span>
                   )}
                   {role === "moderator" && (
-                    <span className="absolute -bottom-1 -right-1 grid size-6 place-items-center rounded-full bg-primary text-black shadow-md">
+                    <span className="absolute -bottom-1 -right-1 grid size-6 place-items-center rounded-full bg-primary text-black shadow-md" title="Moderador">
                       <ShieldCheck className="size-3.5" />
                     </span>
                   )}
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <h1 className="text-xl sm:text-2xl font-bold text-foreground">
                       {profile?.full_name || "Usuário SHOP7"}
                     </h1>
@@ -177,6 +253,9 @@ function MinhaContaPage() {
                         : role === "moderator"
                         ? "Moderador"
                         : "Membro"}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                      <BadgeCheck className="size-3" /> Conta Verificada
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
@@ -208,35 +287,82 @@ function MinhaContaPage() {
               </div>
             </div>
 
+            {/* CARDS DE MÉTRICAS DO USUÁRIO */}
+            <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-white/[0.05]">
+              <div className="rounded-2xl border border-white/[0.05] bg-[#121317] p-3.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Package className="size-3 text-primary" /> Meus Anúncios
+                </span>
+                <p className="mt-1 text-lg sm:text-xl font-bold text-foreground font-display">
+                  {userStats.total}
+                </p>
+                <span className="text-[10px] text-muted-foreground">criados no catálogo</span>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="size-3" /> Aprovados (Ativos)
+                </span>
+                <p className="mt-1 text-lg sm:text-xl font-bold text-emerald-400 font-display">
+                  {userStats.approved}
+                </p>
+                <span className="text-[10px] text-muted-foreground">visíveis no marketplace</span>
+              </div>
+
+              <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/[0.04] p-3.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-yellow-400 flex items-center gap-1">
+                  <Clock className="size-3" /> Em Análise
+                </span>
+                <p className="mt-1 text-lg sm:text-xl font-bold text-yellow-400 font-display">
+                  {userStats.pending}
+                </p>
+                <span className="text-[10px] text-muted-foreground">aguardando aprovação</span>
+              </div>
+
+              <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-3.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary flex items-center gap-1">
+                  <Wallet className="size-3" /> Saldo em Catálogo
+                </span>
+                <p className="mt-1 text-lg sm:text-xl font-bold text-foreground font-display">
+                  {formatBRL(userStats.totalValue)}
+                </p>
+                <span className="text-[10px] text-muted-foreground">em produtos listados</span>
+              </div>
+            </div>
+
             {/* SEÇÃO DINÂMICA: Destaque para Moderador & Admin */}
             {(role === "moderator" || role === "admin") && (
-              <div className="mt-6 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/[0.08] via-transparent to-primary/[0.04] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="mt-6 rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-500/[0.12] via-primary/[0.05] to-transparent p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
                 <div className="flex items-center gap-3">
-                  <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/20 text-primary">
-                    <ShieldCheck className="size-5" />
+                  <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    {role === "admin" ? <Crown className="size-6" /> : <ShieldCheck className="size-6" />}
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                      <span>Central de Moderação & Gestão</span>
-                      {pendingCount > 0 && (
-                        <span className="gradient-lime rounded-full px-2 py-0.5 text-[10px] font-bold text-black">
-                          {pendingCount} {pendingCount === 1 ? "pendente" : "pendentes"}
+                      <span>Painel de Gestão & Moderação {role === "admin" ? "Administrativa" : "Oficial"}</span>
+                      {pendingCount > 0 ? (
+                        <span className="gradient-lime rounded-full px-2 py-0.5 text-[10px] font-bold text-black animate-pulse">
+                          {pendingCount} {pendingCount === 1 ? "anúncio pendente" : "anúncios pendentes"}
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                          Fila em dia
                         </span>
                       )}
                     </h3>
                     <p className="text-xs text-muted-foreground">
                       {role === "admin"
-                        ? "Aprove ou rejeite anúncios, gerencie todos os usuários e altere papéis."
-                        : "Analise anúncios recém-criados e informe justificativas de rejeição."}
+                        ? "Gerencie, crie, edite ou apague todos os anúncios e usuários da plataforma."
+                        : "Analise a fila de moderação, aprove ou rejeite com motivos e gerencie anúncios."}
                     </p>
                   </div>
                 </div>
 
                 <Link
                   to="/moderacao"
-                  className="gradient-lime flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 transition-all self-start sm:self-auto"
+                  className="gradient-lime flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 transition-all self-start sm:self-auto shrink-0"
                 >
-                  <span>Acessar Moderação</span>
+                  <span>Abrir Central de Moderação</span>
                   <ArrowRight className="size-3.5" />
                 </Link>
               </div>
@@ -245,7 +371,7 @@ function MinhaContaPage() {
             {/* Widget de Teste de Role (Demo / Dev) */}
             <div className="mt-4 pt-3 border-t border-white/[0.05] flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1">
-                <Sparkles className="size-3 text-primary" /> Alternar papel para testes na interface:
+                <Sparkles className="size-3 text-primary" /> Alternar papel para testes de permissão no SHOP7:
               </span>
               <div className="flex gap-1.5">
                 {(["user", "moderator", "admin"] as const).map((r) => (
@@ -266,12 +392,12 @@ function MinhaContaPage() {
             </div>
           </div>
 
-          {/* Navegação por Abas */}
+          {/* 2. Navegação por Abas */}
           <div className="mt-8 flex items-center gap-2 border-b border-white/[0.06] pb-3">
             {[
               { id: "anuncios", label: "Meus Anúncios", count: myAds.length, icon: Package },
-              { id: "pedidos", label: "Meus Pedidos", icon: ShoppingBag },
-              { id: "perfil", label: "Perfil & Segurança", icon: User },
+              { id: "pedidos", label: "Minhas Compras & Pedidos", count: DEMO_ORDERS.length, icon: ShoppingBag },
+              { id: "perfil", label: "Meu Perfil & Segurança", icon: User },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -297,23 +423,54 @@ function MinhaContaPage() {
             })}
           </div>
 
-          {/* Conteúdo da Aba 1: Meus Anúncios */}
+          {/* 3. Conteúdo da Aba 1: Meus Anúncios */}
           {activeTab === "anuncios" && (
             <div className="mt-6">
-              <div className="flex items-center justify-between pb-4">
-                <div>
-                  <h2 className="text-base font-bold text-foreground">Gerenciar Meus Anúncios</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Anúncios com status "Pendente" ou "Rejeitado" não aparecem no marketplace público.
-                  </p>
+              {/* Barra de Filtros e Busca */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4">
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Buscar nos meus anúncios..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-9 w-48 sm:w-64 rounded-xl border border-white/[0.08] bg-[#121317] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Filtro por status */}
+                  <div className="flex gap-1">
+                    {[
+                      { id: "todos", label: "Todos" },
+                      { id: "approved", label: "Aprovados" },
+                      { id: "pending", label: "Em Análise" },
+                      { id: "rejected", label: "Rejeitados" },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setAdFilter(f.id as typeof adFilter)}
+                        className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                          adFilter === f.id
+                            ? "bg-primary/20 text-primary border border-primary/30"
+                            : "border border-white/[0.06] bg-[#14151b] text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => {
                     setEditingAd(null);
                     setIsCreateModalOpen(true);
                   }}
-                  className="gradient-lime flex items-center gap-1 rounded-xl px-3.5 py-1.5 text-xs font-bold text-black"
+                  className="gradient-lime flex items-center gap-1 rounded-xl px-3.5 py-1.5 text-xs font-bold text-black self-start sm:self-auto"
                 >
                   <Plus className="size-3.5" />
                   <span>Novo Anúncio</span>
@@ -324,14 +481,18 @@ function MinhaContaPage() {
                 <div className="py-12 text-center text-xs text-muted-foreground">
                   Carregando seus anúncios...
                 </div>
-              ) : myAds.length === 0 ? (
+              ) : filteredAds.length === 0 ? (
                 <div className="rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-12 text-center">
                   <Package className="mx-auto size-10 text-muted-foreground/40" />
                   <h3 className="mt-3 text-sm font-semibold text-foreground">
-                    Você ainda não possui anúncios
+                    {searchQuery || adFilter !== "todos"
+                      ? "Nenhum anúncio encontrado para estes filtros"
+                      : "Você ainda não possui anúncios"}
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
-                    Comece a vender produtos físicos, chaves digitais, contas ou seus serviços especializados agora mesmo.
+                    {searchQuery || adFilter !== "todos"
+                      ? "Tente limpar a busca ou selecionar outro status."
+                      : "Comece a vender produtos físicos, chaves digitais, contas ou seus serviços especializados agora mesmo."}
                   </p>
                   <button
                     type="button"
@@ -347,10 +508,10 @@ function MinhaContaPage() {
                 </div>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {myAds.map((ad) => (
+                  {filteredAds.map((ad) => (
                     <div
                       key={ad.id}
-                      className="group flex flex-col rounded-2xl border border-white/[0.06] bg-[#0e0f13] overflow-hidden transition-all hover:border-white/20"
+                      className="group flex flex-col rounded-2xl border border-white/[0.06] bg-[#0e0f13] overflow-hidden transition-all hover:border-white/20 hover:shadow-xl"
                     >
                       {/* Thumbnail & Badges */}
                       <div className="relative aspect-[16/10] w-full bg-[#15171d] overflow-hidden">
@@ -393,7 +554,12 @@ function MinhaContaPage() {
 
                       {/* Conteúdo */}
                       <div className="flex flex-1 flex-col p-4">
-                        <h3 className="line-clamp-2 text-sm font-semibold text-foreground">
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span className="capitalize">{ad.category.replace(/-/g, " ")}</span>
+                          <span>Estoque: {ad.stock}</span>
+                        </div>
+
+                        <h3 className="mt-1 line-clamp-2 text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
                           {ad.title}
                         </h3>
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
@@ -405,7 +571,7 @@ function MinhaContaPage() {
                           <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-[11px] text-red-400">
                             <strong>Motivo da rejeição:</strong> {ad.rejection_reason}
                             <p className="mt-1 text-[10px] text-muted-foreground">
-                              Edite o anúncio para corrigir o item e re-submeter para moderação.
+                              Edite o anúncio para corrigir e re-submeter para moderação.
                             </p>
                           </div>
                         )}
@@ -419,6 +585,15 @@ function MinhaContaPage() {
                           </div>
 
                           <div className="flex items-center gap-1.5">
+                            {ad.status === "approved" && (
+                              <Link
+                                to="/"
+                                className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151a] text-muted-foreground hover:text-primary"
+                                title="Ver no Marketplace"
+                              >
+                                <ExternalLink className="size-3.5" />
+                              </Link>
+                            )}
                             <button
                               type="button"
                               onClick={() => {
@@ -448,51 +623,104 @@ function MinhaContaPage() {
             </div>
           )}
 
-          {/* Conteúdo da Aba 2: Meus Pedidos */}
+          {/* 4. Conteúdo da Aba 2: Minhas Compras & Pedidos */}
           {activeTab === "pedidos" && (
-            <div className="mt-6 rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-8 text-center">
-              <ShoppingBag className="mx-auto size-10 text-muted-foreground/40" />
-              <h3 className="mt-3 text-sm font-semibold text-foreground">
-                Nenhum pedido realizado ainda
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
-                Quando você comprar produtos ou contratar serviços, o status da entrega e intermediação de pagamento aparecerá aqui.
-              </p>
-              <Link
-                to="/"
-                className="gradient-lime mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black"
-              >
-                <span>Explorar Marketplace</span>
-              </Link>
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-foreground">Histórico de Pedidos & Compras</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Acompanhe suas compras com saldo intermediado e garantia SHOP7.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {DEMO_ORDERS.map((ord) => (
+                  <div
+                    key={ord.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+                        <ShoppingBag className="size-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-primary">{ord.id}</span>
+                          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                            Entregue / Concluído
+                          </span>
+                        </div>
+                        <h4 className="mt-1 text-sm font-semibold text-foreground">{ord.title}</h4>
+                        <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                          <span>Vendedor: <strong>{ord.seller}</strong></span>
+                          <span>·</span>
+                          <span>Data: {new Date(ord.date).toLocaleDateString("pt-BR")}</span>
+                        </div>
+
+                        {ord.code && (
+                          <div className="mt-2.5 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-[#14151b] px-3 py-1 text-xs">
+                            <span className="text-[10px] text-muted-foreground uppercase font-bold">Chave de Ativação:</span>
+                            <code className="text-primary font-mono font-bold select-all">{ord.code}</code>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t sm:border-t-0 border-white/[0.04] pt-2 sm:pt-0">
+                      <span className="text-base font-bold font-display text-foreground">
+                        {formatBRL(ord.price)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => alert(`Recibo do pedido ${ord.id} com garantia de intermediação SHOP7.`)}
+                        className="rounded-lg border border-white/[0.08] bg-[#14151b] px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                      >
+                        Ver Detalhes
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Conteúdo da Aba 3: Perfil */}
+          {/* 5. Conteúdo da Aba 3: Perfil & Segurança */}
           {activeTab === "perfil" && (
-            <div className="mt-6 max-w-xl rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-6 sm:p-8">
+            <div className="mt-6 max-w-2xl rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-6 sm:p-8">
               <h2 className="text-base font-bold text-foreground">Editar Dados de Perfil</h2>
               <p className="text-xs text-muted-foreground">
-                Mantenha suas informações atualizadas para os compradores do SHOP7.
+                Personalize seu nome de exibição e foto para os clientes e compradores no SHOP7.
               </p>
 
               {profileMsg && (
-                <div className="mt-4 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs text-primary">
-                  {profileMsg}
+                <div
+                  className={`mt-4 rounded-xl border p-3 text-xs ${
+                    profileMsg.type === "success"
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-red-500/30 bg-red-500/10 text-red-400"
+                  }`}
+                >
+                  {profileMsg.text}
                 </div>
               )}
 
               <form onSubmit={handleProfileUpdate} className="mt-5 space-y-4">
+                {/* Nome de Exibição */}
                 <div>
-                  <label className="text-xs font-semibold text-foreground">Nome de Exibição</label>
+                  <label className="text-xs font-semibold text-foreground">Nome de Exibição *</label>
                   <input
                     type="text"
                     required
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Seu nome ou nome da sua loja"
                     className="mt-1.5 h-10 w-full rounded-xl border border-white/[0.08] bg-[#14151a] px-3.5 text-xs text-foreground focus:border-primary/50 focus:outline-none"
                   />
                 </div>
 
+                {/* E-mail */}
                 <div>
                   <label className="text-xs font-semibold text-foreground">E-mail Cadastrado</label>
                   <input
@@ -503,11 +731,42 @@ function MinhaContaPage() {
                   />
                 </div>
 
+                {/* Foto / Avatar URL */}
                 <div>
-                  <label className="text-xs font-semibold text-foreground">Nível de Permissão (Role)</label>
+                  <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                    <span>URL da Foto de Perfil (Avatar)</span>
+                    {editAvatar && <span className="text-[10px] text-primary">Prévia ativa</span>}
+                  </label>
+                  <div className="mt-1.5 flex gap-2 items-center">
+                    <input
+                      type="url"
+                      value={editAvatar}
+                      onChange={(e) => setEditAvatar(e.target.value)}
+                      placeholder="https://exemplo.com/sua-foto.jpg"
+                      className="h-10 flex-1 rounded-xl border border-white/[0.08] bg-[#14151a] px-3.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
+                    />
+                    {editAvatar && (
+                      <div className="size-10 shrink-0 rounded-xl overflow-hidden border border-white/20 bg-black">
+                        <img
+                          src={editAvatar}
+                          alt="Prévia"
+                          className="size-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = "none";
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Nível de Acesso */}
+                <div>
+                  <label className="text-xs font-semibold text-foreground">Nível de Permissão na Plataforma</label>
                   <div className="mt-1.5">
-                    <span className="rounded-lg border border-white/[0.08] bg-[#14151a] px-3 py-2 text-xs font-bold text-primary inline-block">
-                      {role === "admin" ? "👑 Administrador" : role === "moderator" ? "🛡️ Moderador" : "👤 Usuário Padrão"}
+                    <span className="rounded-xl border border-white/[0.08] bg-[#14151a] px-3.5 py-2 text-xs font-bold text-primary inline-flex items-center gap-1.5">
+                      {role === "admin" ? <Crown className="size-4 text-purple-400" /> : role === "moderator" ? <ShieldCheck className="size-4 text-primary" /> : <User className="size-4" />}
+                      {role === "admin" ? "Administrador SHOP7 (Acesso Total)" : role === "moderator" ? "Moderador Oficial (Aprovação de Anúncios)" : "Membro Verificado"}
                     </span>
                   </div>
                 </div>
@@ -541,6 +800,7 @@ function MinhaContaPage() {
           loadData();
         }}
         initialAd={editingAd}
+        isAdminMode={false}
       />
     </div>
   );

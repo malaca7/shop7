@@ -543,6 +543,8 @@ function ModeracaoPage() {
               <span className="text-[10px] text-muted-foreground">recusados com motivo</span>
             </button>
 
+          </div>
+
           {/* NAVEGAÇÃO DE ABAS */}
           <div className="mt-8 flex flex-wrap items-center gap-2 border-b border-white/[0.06] pb-3">
             {[

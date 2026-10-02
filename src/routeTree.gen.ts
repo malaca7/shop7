@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as MinhaContaRouteImport } from './routes/minha-conta'
 import { Route as ModeracaoRouteImport } from './routes/moderacao'
@@ -17,6 +18,11 @@ import { Route as ModeracaoRouteImport } from './routes/moderacao'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -37,12 +43,14 @@ const ModeracaoRoute = ModeracaoRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/minha-conta': typeof MinhaContaRoute
   '/moderacao': typeof ModeracaoRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/minha-conta': typeof MinhaContaRoute
   '/moderacao': typeof ModeracaoRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/minha-conta': typeof MinhaContaRoute
   '/moderacao': typeof ModeracaoRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/minha-conta' | '/moderacao'
+  fullPaths: '/' | '/admin' | '/auth' | '/minha-conta' | '/moderacao'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/minha-conta' | '/moderacao'
-  id: '__root__' | '/' | '/auth' | '/minha-conta' | '/moderacao'
+  to: '/' | '/admin' | '/auth' | '/minha-conta' | '/moderacao'
+  id: '__root__' | '/' | '/admin' | '/auth' | '/minha-conta' | '/moderacao'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   AuthRoute: typeof AuthRoute
   MinhaContaRoute: typeof MinhaContaRoute
   ModeracaoRoute: typeof ModeracaoRoute
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   AuthRoute: AuthRoute,
   MinhaContaRoute: MinhaContaRoute,
   ModeracaoRoute: ModeracaoRoute,

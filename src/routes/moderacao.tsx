@@ -237,11 +237,15 @@ function ModeracaoPage() {
   // Ação: Confirmar Rejeição com Motivo
   const handleConfirmReject = async (reason: string) => {
     if (!rejectingAd || !user) return;
-    await AdsService.moderateAd(rejectingAd.id, "rejected", reason, user.id);
-    setActionSuccessMsg(`Anúncio "${rejectingAd.title}" REJEITADO. Motivo registrado: "${reason}".`);
-    setRejectingAd(null);
-    loadData();
-    setTimeout(() => setActionSuccessMsg(null), 5000);
+    try {
+      await AdsService.moderateAd(rejectingAd.id, "rejected", reason, user.id);
+      setActionSuccessMsg(`Anúncio "${rejectingAd.title}" REJEITADO. Motivo registrado: "${reason}".`);
+      setRejectingAd(null);
+      loadData();
+      setTimeout(() => setActionSuccessMsg(null), 5000);
+    } catch (err) {
+      alert("Erro ao rejeitar anúncio.");
+    }
   };
 
   // Ação Admin: Alterar Role do Usuário

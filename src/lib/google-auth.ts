@@ -166,7 +166,12 @@ export async function promptGoogleOAuthPopup(): Promise<GoogleUserData> {
           });
         } catch (err: any) {
           resolvedOrRejected = true;
-          reject(err);
+          const msg = err?.message || "";
+          if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+            reject(new Error("Falha de conexão com os serviços do Google. Verifique sua conexão de rede ou bloqueador de anúncios."));
+          } else {
+            reject(err);
+          }
         }
       },
       error_callback: (err: any) => {

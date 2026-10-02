@@ -158,16 +158,24 @@ export const AdsService = {
   // 1. Obter anúncios aprovados (Público / Marketplace)
   async getApprovedAds(): Promise<Ad[]> {
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from("ads")
-        .select("*")
-        .eq("status", "approved")
-        .order("created_at", { ascending: false });
-      if (error) {
-        console.error("Erro ao carregar anúncios aprovados do Supabase:", error);
-        return [];
+      try {
+        const { data, error } = await supabase
+          .from("ads")
+          .select("*")
+          .eq("status", "approved")
+          .order("created_at", { ascending: false });
+        if (error) {
+          console.warn("Supabase indisponível ao carregar anúncios aprovados, usando fallback local:", error.message);
+          return getLocalAds().filter((a) => a.status === "approved");
+        }
+        if (data && data.length > 0) {
+          return data;
+        }
+        return getLocalAds().filter((a) => a.status === "approved");
+      } catch (err) {
+        console.warn("Falha de rede em getApprovedAds, usando fallback local:", err);
+        return getLocalAds().filter((a) => a.status === "approved");
       }
-      return data || [];
     }
     return getLocalAds().filter((a) => a.status === "approved");
   },
@@ -176,16 +184,21 @@ export const AdsService = {
   async getMyAds(userId: string): Promise<Ad[]> {
     if (!userId) return [];
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from("ads")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false });
-      if (error) {
-        console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+      try {
+        const { data, error } = await supabase
+          .from("ads")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
+        if (error) {
+          console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+          return getLocalAds().filter((a) => a.user_id === userId);
+        }
+        return data || [];
+      } catch (err) {
+        console.warn("Falha de rede em getMyAds, usando fallback:", err);
         return getLocalAds().filter((a) => a.user_id === userId);
       }
-      return data || [];
     }
     return getLocalAds().filter((a) => a.user_id === userId);
   },
@@ -193,16 +206,21 @@ export const AdsService = {
   // 3. Obter todos os anúncios pendentes (Moderadores & Admins)
   async getPendingAds(): Promise<Ad[]> {
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from("ads")
-        .select("*")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false });
-      if (error) {
-        console.warn("Supabase pending ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+      try {
+        const { data, error } = await supabase
+          .from("ads")
+          .select("*")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+        if (error) {
+          console.warn("Supabase pending ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+          return getLocalAds().filter((a) => a.status === "pending");
+        }
+        return data || [];
+      } catch (err) {
+        console.warn("Falha de rede em getPendingAds, usando fallback:", err);
         return getLocalAds().filter((a) => a.status === "pending");
       }
-      return data || [];
     }
     return getLocalAds().filter((a) => a.status === "pending");
   },
@@ -210,15 +228,21 @@ export const AdsService = {
   // 4. Obter todos os anúncios com filtro de status opcional (Moderadores & Admins)
   async getAllAds(statusFilter?: AdStatus): Promise<Ad[]> {
     if (isLiveSupabaseConfigured) {
-      let query = supabase.from("ads").select("*").order("created_at", { ascending: false });
-      if (statusFilter) query = query.eq("status", statusFilter);
-      const { data, error } = await query;
-      if (error) {
-        console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+      try {
+        let query = supabase.from("ads").select("*").order("created_at", { ascending: false });
+        if (statusFilter) query = query.eq("status", statusFilter);
+        const { data, error } = await query;
+        if (error) {
+          console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
+          const all = getLocalAds();
+          return statusFilter ? all.filter((a) => a.status === statusFilter) : all;
+        }
+        return data || [];
+      } catch (err) {
+        console.warn("Falha de rede em getAllAds, usando fallback:", err);
         const all = getLocalAds();
         return statusFilter ? all.filter((a) => a.status === statusFilter) : all;
       }
-      return data || [];
     }
     const all = getLocalAds();
     return statusFilter ? all.filter((a) => a.status === statusFilter) : all;
@@ -241,10 +265,15 @@ export const AdsService = {
     if (isLiveSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from("ads").insert([payload]).select().single();
-        if (!error && data) return data;
-        console.warn("Falha ao inserir no Supabase (verifique se executou supabase/schema.sql no SQL Editor):", error?.message);
+        if (!error && data) {
+          const ads = getLocalAds();
+          ads.unshift(data);
+          saveLocalAds(ads);
+          return data;
+        }
+        console.warn("Falha ao inserir no Supabase (verifique schema.sql), gravando local:", error?.message);
       } catch (e: any) {
-        console.warn("Exceção no Supabase insert:", e.message);
+        console.warn("Exceção no Supabase insert, gravando local:", e.message);
       }
     }
 
@@ -270,39 +299,51 @@ export const AdsService = {
       updated_at: new Date().toISOString(),
     };
 
+    let updatedFromDb: Ad | null = null;
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from("ads")
-        .update(changes)
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw new Error(error.message);
-      return data;
+      try {
+        const { data, error } = await supabase
+          .from("ads")
+          .update(changes)
+          .eq("id", id)
+          .select()
+          .single();
+        if (!error && data) {
+          updatedFromDb = data;
+        } else {
+          console.warn("Falha ao atualizar no Supabase, salvando localmente:", error?.message);
+        }
+      } catch (err) {
+        console.warn("Supabase indisponível em updateAd, salvando localmente:", err);
+      }
     }
 
     const ads = getLocalAds();
     const index = ads.findIndex((a) => a.id === id);
-    const existing = ads[index];
-    if (!existing) throw new Error("Anúncio não encontrado");
-    const updatedAd: Ad = {
-      ...existing,
-      ...changes,
-      id: existing.id,
-      user_id: existing.user_id,
-      title: changes.title ?? existing.title,
-      description: changes.description ?? existing.description,
-      category: changes.category ?? existing.category,
-      type: changes.type ?? existing.type,
-      price: changes.price ?? existing.price,
-      images: changes.images ?? existing.images,
-      stock: changes.stock ?? existing.stock,
-      additional_info: (changes.additional_info !== undefined ? changes.additional_info : existing.additional_info) ?? null,
-      seller_name: (changes.seller_name !== undefined ? changes.seller_name : existing.seller_name) ?? null,
-    };
-    ads[index] = updatedAd;
-    saveLocalAds(ads);
-    return updatedAd;
+    if (index !== -1) {
+      const existing = ads[index];
+      const updatedAd: Ad = updatedFromDb || {
+        ...existing,
+        ...changes,
+        id: existing.id,
+        user_id: existing.user_id,
+        title: changes.title ?? existing.title,
+        description: changes.description ?? existing.description,
+        category: changes.category ?? existing.category,
+        type: changes.type ?? existing.type,
+        price: changes.price ?? existing.price,
+        images: changes.images ?? existing.images,
+        stock: changes.stock ?? existing.stock,
+        additional_info: (changes.additional_info !== undefined ? changes.additional_info : existing.additional_info) ?? null,
+        seller_name: (changes.seller_name !== undefined ? changes.seller_name : existing.seller_name) ?? null,
+      };
+      ads[index] = updatedAd;
+      saveLocalAds(ads);
+      return updatedAd;
+    }
+
+    if (updatedFromDb) return updatedFromDb;
+    throw new Error("Anúncio não encontrado");
   },
 
   // 7. Moderar anúncio: Aprovar ou Rejeitar (Moderador / Admin)
@@ -320,36 +361,53 @@ export const AdsService = {
       updated_at: new Date().toISOString(),
     };
 
+    let moderatedFromDb: Ad | null = null;
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from("ads")
-        .update(changes)
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw new Error(error.message);
-      return data;
+      try {
+        const { data, error } = await supabase
+          .from("ads")
+          .update(changes)
+          .eq("id", id)
+          .select()
+          .single();
+        if (!error && data) {
+          moderatedFromDb = data;
+        } else {
+          console.warn("Falha ao moderar no Supabase, aplicando localmente:", error?.message);
+        }
+      } catch (err) {
+        console.warn("Supabase indisponível em moderateAd, aplicando localmente:", err);
+      }
     }
 
     const ads = getLocalAds();
     const index = ads.findIndex((a) => a.id === id);
-    const existing = ads[index];
-    if (!existing) throw new Error("Anúncio não encontrado");
-    const updatedAd: Ad = {
-      ...existing,
-      ...changes,
-    };
-    ads[index] = updatedAd;
-    saveLocalAds(ads);
-    return updatedAd;
+    if (index !== -1) {
+      const existing = ads[index];
+      const updatedAd: Ad = moderatedFromDb || {
+        ...existing,
+        ...changes,
+      };
+      ads[index] = updatedAd;
+      saveLocalAds(ads);
+      return updatedAd;
+    }
+
+    if (moderatedFromDb) return moderatedFromDb;
+    throw new Error("Anúncio não encontrado");
   },
 
   // 8. Excluir anúncio
   async deleteAd(id: string): Promise<boolean> {
     if (isLiveSupabaseConfigured) {
-      const { error } = await supabase.from("ads").delete().eq("id", id);
-      if (error) throw new Error(error.message);
-      return true;
+      try {
+        const { error } = await supabase.from("ads").delete().eq("id", id);
+        if (error) {
+          console.warn("Falha ao excluir no Supabase, excluindo localmente:", error.message);
+        }
+      } catch (err) {
+        console.warn("Supabase indisponível em deleteAd, excluindo localmente:", err);
+      }
     }
     const ads = getLocalAds().filter((a) => a.id !== id);
     saveLocalAds(ads);
@@ -359,39 +417,57 @@ export const AdsService = {
   // 9. Gestão de Usuários (Admin)
   async getAllProfiles(): Promise<Profile[]> {
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
-      if (error) {
-        console.warn("Supabase profiles indisponível ou tabela ainda não criada, usando fallback:", error.message);
+      try {
+        const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+        if (error) {
+          console.warn("Supabase profiles indisponível ou tabela ainda não criada, usando fallback:", error.message);
+          return getLocalProfiles();
+        }
+        return data && data.length > 0 ? data : getLocalProfiles();
+      } catch (err) {
+        console.warn("Supabase offline em getAllProfiles, usando fallback:", err);
         return getLocalProfiles();
       }
-      return data || [];
     }
     return getLocalProfiles();
   },
 
   // 10. Alterar Role do Usuário (Admin)
   async updateUserRole(userId: string, newRole: UserRole): Promise<Profile> {
+    let updatedFromDb: Profile | null = null;
     if (isLiveSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from("profiles")
-        .update({ role: newRole, updated_at: new Date().toISOString() })
-        .eq("id", userId)
-        .select()
-        .single();
-      if (error) throw new Error(error.message);
-      return data;
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .update({ role: newRole, updated_at: new Date().toISOString() })
+          .eq("id", userId)
+          .select()
+          .single();
+        if (!error && data) {
+          updatedFromDb = data;
+        } else {
+          console.warn("Falha ao atualizar papel no Supabase, salvando localmente:", error?.message);
+        }
+      } catch (err) {
+        console.warn("Supabase indisponível em updateUserRole, salvando localmente:", err);
+      }
     }
+
     const profiles = getLocalProfiles();
     const index = profiles.findIndex((p) => p.id === userId);
-    const existingProf = profiles[index];
-    if (!existingProf) throw new Error("Usuário não encontrado");
-    const updatedProf: Profile = {
-      ...existingProf,
-      role: newRole,
-      updated_at: new Date().toISOString(),
-    };
-    profiles[index] = updatedProf;
-    saveLocalProfiles(profiles);
-    return updatedProf;
+    if (index !== -1) {
+      const existingProf = profiles[index];
+      const updatedProf: Profile = updatedFromDb || {
+        ...existingProf,
+        role: newRole,
+        updated_at: new Date().toISOString(),
+      };
+      profiles[index] = updatedProf;
+      saveLocalProfiles(profiles);
+      return updatedProf;
+    }
+
+    if (updatedFromDb) return updatedFromDb;
+    throw new Error("Usuário não encontrado");
   },
 };

@@ -146,32 +146,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isLiveSupabaseConfigured) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (_event, session) => {
-          if (session?.user) {
-            const isAdmin = isUserAdminEmail(session.user.email);
-            setUser({ id: session.user.id, email: session.user.email || "" });
-            const { data: prof } = await supabase
-              .from("profiles")
-              .select("*")
-              .eq("id", session.user.id)
-              .single();
-            if (prof) {
-              setProfile({
-                ...(prof as Profile),
-                role: isAdmin ? "admin" : (prof as Profile).role,
-              });
+          try {
+            if (session?.user) {
+              const isAdmin = isUserAdminEmail(session.user.email);
+              setUser({ id: session.user.id, email: session.user.email || "" });
+              try {
+                const { data: prof } = await supabase
+                  .from("profiles")
+                  .select("*")
+                  .eq("id", session.user.id)
+                  .single();
+                if (prof) {
+                  setProfile({
+                    ...(prof as Profile),
+                    role: isAdmin ? "admin" : (prof as Profile).role,
+                  });
+                } else {
+                  const meta = session.user.user_metadata as Record<string, any> | undefined;
+                  setProfile({
+                    id: session.user.id,
+                    email: session.user.email || "",
+                    full_name: (meta?.["full_name"] || meta?.["name"] || (isAdmin ? "Rogério Malaquias Jr" : session.user.email?.split("@")[0])) || null,
+                    avatar_url: (meta?.["avatar_url"] || meta?.["picture"]) || null,
+                    role: isAdmin ? "admin" : "user",
+                  });
+                }
+              } catch (profErr) {
+                console.warn("Erro ao buscar perfil em onAuthStateChange:", profErr);
+              }
             } else {
-              const meta = session.user.user_metadata as Record<string, any> | undefined;
-              setProfile({
-                id: session.user.id,
-                email: session.user.email || "",
-                full_name: (meta?.["full_name"] || meta?.["name"] || (isAdmin ? "Rogério Malaquias Jr" : session.user.email?.split("@")[0])) || null,
-                avatar_url: (meta?.["avatar_url"] || meta?.["picture"]) || null,
-                role: isAdmin ? "admin" : "user",
-              });
+              setUser(null);
+              setProfile(null);
             }
-          } else {
-            setUser(null);
-            setProfile(null);
+          } catch (authErr) {
+            console.warn("Erro no listener de mudanças de autenticação:", authErr);
           }
         }
       );
@@ -361,7 +369,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       if (isLiveSupabaseConfigured) {
-        await supabase.auth.signOut();
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.warn("Supabase indisponível ao deslogar:", e);
+        }
       }
       setUser(null);
       setProfile(null);
@@ -377,13 +389,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const updated = { ...profile, ...data, updated_at: new Date().toISOString() };
     setProfile(updated);
 
+    localStorage.setItem(
+      LOCAL_SESSION_KEY,
+      JSON.stringify({ user, profile: updated })
+    );
+
     if (isLiveSupabaseConfigured) {
-      await supabase.from("profiles").update(data).eq("id", user.id);
-    } else {
-      localStorage.setItem(
-        LOCAL_SESSION_KEY,
-        JSON.stringify({ user, profile: updated })
-      );
+      try {
+        await supabase.from("profiles").update(data).eq("id", user.id);
+      } catch (e) {
+        console.warn("Supabase indisponível ao sincronizar perfil:", e);
+      }
     }
   };
 

@@ -359,10 +359,10 @@ function MinhaContaPage() {
                 </div>
 
                 <Link
-                  to="/moderacao"
+                  to={role === "admin" ? "/admin" : "/moderacao"}
                   className="gradient-lime flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 transition-all self-start sm:self-auto shrink-0"
                 >
-                  <span>Abrir Central de Moderação</span>
+                  <span>Abrir Central {role === "admin" ? "Administrativa" : "de Moderação"}</span>
                   <ArrowRight className="size-3.5" />
                 </Link>
               </div>

@@ -106,8 +106,22 @@ export function Header({ onSearch, onOpenCreateAd }: HeaderProps) {
                   </Link>
                 )}
 
-                {/* Acesso rápido à Moderação no menu mobile se for moderador/admin */}
-                {(role === "moderator" || role === "admin") && (
+                {role === "admin" && (
+                  <Link
+                    to="/admin"
+                    className="mt-3 flex items-center justify-between rounded-xl border border-purple-500/30 bg-purple-500/10 p-3 text-xs font-semibold text-purple-400"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Crown className="size-4" />
+                      <span>Central Administrativa</span>
+                    </div>
+                    <span className="rounded-full bg-purple-500 text-black px-1.5 py-0.2 text-[10px] font-bold">
+                      Acessar
+                    </span>
+                  </Link>
+                )}
+
+                {role === "moderator" && (
                   <Link
                     to="/moderacao"
                     className="mt-3 flex items-center justify-between rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs font-semibold text-primary"
@@ -250,7 +264,16 @@ export function Header({ onSearch, onOpenCreateAd }: HeaderProps) {
                   </Link>
                 </DropdownMenuItem>
 
-                {(role === "moderator" || role === "admin") && (
+                {role === "admin" && (
+                  <DropdownMenuItem asChild className="rounded-xl cursor-pointer text-purple-400 focus:text-purple-400">
+                    <Link to="/admin" className="flex items-center gap-2">
+                      <Crown className="size-4" />
+                      <span>Central Administrativa</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+
+                {role === "moderator" && (
                   <DropdownMenuItem asChild className="rounded-xl cursor-pointer text-primary focus:text-primary">
                     <Link to="/moderacao" className="flex items-center gap-2">
                       <ShieldCheck className="size-4" />

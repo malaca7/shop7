@@ -46,18 +46,18 @@ import { AdsService } from "@/lib/ads-service";
 import type { Ad, Profile, UserRole, AdType, AdStatus } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
 
-export const Route = createFileRoute("/moderacao")({
+export const Route = createFileRoute("/admin")({
   head: () => ({
-    meta: [{ title: "Painel de Moderação & Gestão Administrativa — SHOP7" }],
+    meta: [{ title: "Painel Administrativo — SHOP7" }],
   }),
-  component: ModeracaoPage,
+  component: AdminPage,
 });
 
-function ModeracaoPage() {
+function AdminPage() {
   const { user, role, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<"pendentes" | "todos-anuncios" | "historico">("pendentes");
+  const [activeTab, setActiveTab] = useState<"pendentes" | "todos-anuncios" | "usuarios" | "historico" | "metricas">("pendentes");
   const [pendingAds, setPendingAds] = useState<Ad[]>([]);
   const [allAds, setAllAds] = useState<Ad[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -116,7 +116,7 @@ function ModeracaoPage() {
   };
 
   useEffect(() => {
-    if (role === "moderator" || role === "admin") {
+    if (role === "admin") {
       loadData();
     }
   }, [role]);
@@ -143,8 +143,8 @@ function ModeracaoPage() {
       .reduce((sum, a) => sum + (Number(a.price) || 0) * (Number(a.stock) || 1), 0);
     const usersCount = profiles.length;
 
-    return { total, pending, approved, rejected, totalValue: 0, usersCount: 0 };
-  }, [allAds, pendingAds]);
+    return { total, pending, approved, rejected, totalValue, usersCount };
+  }, [allAds, pendingAds, profiles]);
 
   // Formatar tempo decorrido relativo
   const getRelativeTime = (isoString: string) => {
@@ -371,8 +371,8 @@ function ModeracaoPage() {
     );
   }
 
-  // PROTEÇÃO DE ROTA: Bloqueio estrito para role 'user'
-  if (role !== "moderator" && role !== "admin") {
+  // PROTEÇÃO DE ROTA: Bloqueio estrito para qualquer role que não seja admin
+  if (role !== "admin") {
     return (
       <div className="dark min-h-screen bg-[#070709] text-foreground flex flex-col justify-between">
         <Header />
@@ -383,7 +383,7 @@ function ModeracaoPage() {
             </div>
             <h1 className="mt-4 text-xl font-bold text-foreground">Acesso Restrito</h1>
             <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-              Esta área é restrita a <strong>Moderadores</strong> e <strong>Administradores</strong> do SHOP7. Sua conta atual possui o papel de <strong>Membro (User)</strong>.
+              Esta área é restrita a <strong>Administradores</strong> do SHOP7.
             </p>
             <div className="mt-6 flex flex-col gap-2">
               <Link
@@ -416,14 +416,14 @@ function ModeracaoPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-bold text-foreground">
-                    Central de Moderação
+                    Central Administrativa
                   </h1>
-                  <span className="rounded-full bg-primary/20 border border-primary/30 px-2.5 py-0.5 text-[10px] font-bold text-primary">
-                    MODERADOR
+                  <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-300">
+                    ADMIN TOTAL
                   </span>
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Aprove, rejeite ou gerencie anúncios na fila da plataforma.
+                  Gerencie, aprove, edite, crie ou apague anúncios, dados e usuários em tempo real no SHOP7.
                 </p>
               </div>
             </div>
@@ -440,6 +440,18 @@ function ModeracaoPage() {
               >
                 <Plus className="size-4 stroke-[2.5]" />
                 <span>+ Novo Anúncio</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProfile(null);
+                  setIsUserModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-white/[0.1] bg-[#14151b] px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/50 hover:text-primary transition-all"
+              >
+                <UserPlus className="size-4" />
+                <span>+ Novo Usuário</span>
               </button>
 
               <button
@@ -543,11 +555,41 @@ function ModeracaoPage() {
               <span className="text-[10px] text-muted-foreground">recusados com motivo</span>
             </button>
 
+            <button
+              type="button"
+              onClick={() => setActiveTab("usuarios")}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                activeTab === "usuarios"
+                  ? "border-purple-500 bg-purple-500/[0.12] shadow-[0_0_20px_-4px_rgba(168,85,247,0.25)]"
+                  : "border-purple-500/20 bg-purple-500/[0.04] hover:border-purple-500/40"
+              }`}
+            >
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1">
+                <Users className="size-3" /> Usuários
+              </span>
+              <p className="mt-2 text-2xl font-bold font-display text-purple-300">
+                {stats.usersCount}
+              </p>
+              <span className="text-[10px] text-muted-foreground">perfis gerenciáveis</span>
+            </button>
+
+            <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 col-span-2 sm:col-span-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
+                <TrendingUp className="size-3" /> Volume em Anúncios
+              </span>
+              <p className="mt-2 text-xl sm:text-2xl font-bold font-display text-foreground">
+                {formatBRL(stats.totalValue)}
+              </p>
+              <span className="text-[10px] text-muted-foreground">em catálogo aprovado</span>
+            </div>
+          </div>
+
           {/* NAVEGAÇÃO DE ABAS */}
           <div className="mt-8 flex flex-wrap items-center gap-2 border-b border-white/[0.06] pb-3">
             {[
               { id: "pendentes", label: "Fila de Moderação", count: stats.pending, icon: Clock, badgeColor: "bg-yellow-500/20 text-yellow-400" },
               { id: "todos-anuncios", label: "Todos os Anúncios", count: stats.total, icon: Package, badgeColor: "bg-white/[0.08] text-muted-foreground" },
+              { id: "usuarios", label: "Gestão de Usuários", count: stats.usersCount, icon: Users, badgeColor: "bg-purple-500/20 text-purple-300" },
               { id: "historico", label: "Histórico de Decisões", count: historyAds.length, icon: Calendar, badgeColor: "bg-white/[0.08] text-muted-foreground" },
             ].map((tab) => {
               const Icon = tab.icon;

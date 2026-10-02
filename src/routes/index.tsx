@@ -87,14 +87,8 @@ function HomePage() {
     loadApproved();
   }, []);
 
-  // Filter products by selected category and search query
   const displayedProducts = useMemo(() => {
-    let list: Product[] = [];
-    if (activeTab === "featured") list = [...FEATURED_PRODUCTS];
-    else if (activeTab === "bestsellers") list = [...BEST_SELLERS];
-    else if (activeTab === "services") list = [...SERVICES];
-
-    // Converter anúncios aprovados de usuários para exibição pública
+    // Converter anúncios aprovados para o formato Product
     const userProducts: Product[] = approvedAds.map((ad) => ({
       id: ad.id,
       title: ad.title,
@@ -110,15 +104,20 @@ function HomePage() {
       sellerVerified: true,
       deliveryLabel: ad.type === "servico" ? "Sob Demanda" : "Entrega Protegida",
       accent: "from-lime-500/20 to-emerald-950/40",
+      image: ad.images?.[0] || undefined,
     }));
 
-    // Se estiver em serviços, prioriza anúncios de serviço
-    const combined =
-      activeTab === "services"
-        ? [...userProducts.filter((u) => u.productType === "servico"), ...list]
-        : [...userProducts, ...list];
+    // Filtra por abas
+    let filteredList = userProducts;
+    if (activeTab === "services") {
+      filteredList = userProducts.filter((u) => u.productType === "servico");
+    } else if (activeTab === "bestsellers") {
+      // Simula ordenação por mais vendidos se houvesse métrica real
+      filteredList = [...userProducts].sort((a, b) => b.stock - a.stock);
+    }
 
-    return combined.filter((p) => {
+    // Filtra por categoria e busca
+    return filteredList.filter((p) => {
       const matchesCategory =
         selectedCategory === "all" || p.categorySlug === selectedCategory;
       const matchesSearch =
@@ -193,15 +192,15 @@ function HomePage() {
               <div className="mt-8 flex flex-wrap items-center justify-center gap-2 sm:gap-6 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.04] bg-[#0d0e12] px-3 py-1.5">
                   <CheckCircle2 className="size-3.5 text-primary" />
-                  <span><strong className="text-foreground">12.000+</strong> anúncios</span>
+                  <span><strong className="text-foreground">{approvedAds.length}</strong> anúncios ativos</span>
                 </div>
                 <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.04] bg-[#0d0e12] px-3 py-1.5">
                   <Star className="size-3.5 fill-primary text-primary" />
-                  <span><strong className="text-foreground">4.9/5</strong> de satisfação</span>
+                  <span><strong className="text-foreground">Lojas</strong> verificadas</span>
                 </div>
                 <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.04] bg-[#0d0e12] px-3 py-1.5">
                   <Zap className="size-3.5 text-primary" />
-                  <span><strong className="text-foreground">&lt; 2 min</strong> entrega digital</span>
+                  <span><strong className="text-foreground">Entrega</strong> Segura</span>
                 </div>
               </div>
             </div>

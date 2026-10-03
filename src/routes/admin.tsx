@@ -119,7 +119,7 @@ function AdminPage() {
     if (role === "admin") {
       loadData();
     }
-  }, [role]);
+  }, [role, activeTab]);
 
   // Mensagem temporária
   const showFeedback = (msg: string, isError = false) => {
@@ -991,7 +991,7 @@ function AdminPage() {
             </div>
           )}
 
-          {/* ========================================================================= */}
+          {/* ===================================================================          {/* ========================================================================= */}
           {/* ABA 3: GESTÃO DE USUÁRIOS (ADMIN & MOD) */}
           {/* ========================================================================= */}
           {activeTab === "usuarios" && (
@@ -1019,6 +1019,18 @@ function AdminPage() {
                     <option value="moderator">Moderadores</option>
                     <option value="user">Membros (Users)</option>
                   </select>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      loadData();
+                      showFeedback("Lista de usuários atualizada.");
+                    }}
+                    className="grid size-10 place-items-center rounded-xl border border-white/[0.08] bg-[#121317] text-muted-foreground hover:text-foreground hover:border-white/20 transition-all shrink-0"
+                    title="Recarregar membros cadastrados"
+                  >
+                    <RefreshCw className={`size-4 ${loading ? "animate-spin text-primary" : ""}`} />
+                  </button>
                 </div>
 
                 <button
@@ -1027,7 +1039,7 @@ function AdminPage() {
                     setEditingProfile(null);
                     setIsUserModalOpen(true);
                   }}
-                  className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shrink-0 self-start sm:self-auto"
+                  className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shrink-0 self-start sm:self-auto shadow-md hover:brightness-110 active:scale-95 transition-all"
                 >
                   <UserPlus className="size-3.5 stroke-[2.5]" />
                   <span>Cadastrar Usuário</span>
@@ -1036,117 +1048,155 @@ function AdminPage() {
 
               {/* Tabela de Usuários */}
               <div className="grid gap-3">
-                {filteredProfiles.map((p) => {
-                  const userAdsCount = allAds.filter((a) => a.user_id === p.id).length;
-                  const isCurrentLoggedUser = p.id === user?.id;
-
-                  return (
-                    <div
-                      key={p.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className="relative size-12 shrink-0 rounded-2xl overflow-hidden bg-[#15171d] border border-white/10 grid place-items-center font-bold text-primary text-base">
-                          {p.avatar_url ? (
-                            <img src={p.avatar_url} alt={p.full_name || "Avatar"} className="size-full object-cover" />
-                          ) : (
-                            ((p.full_name || p.email)?.[0] || "U").toUpperCase()
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="text-sm font-bold text-foreground">
-                              {p.full_name || "Sem Nome Cadastrado"}
-                            </h4>
-                            {isCurrentLoggedUser && (
-                              <span className="rounded-full bg-primary/20 border border-primary/30 px-2 py-0.2 text-[9px] font-bold text-primary">
-                                VOCÊ
-                              </span>
-                            )}
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                                p.role === "admin"
-                                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                                  : p.role === "moderator"
-                                  ? "bg-primary/20 text-primary border border-primary/30"
-                                  : "bg-white/[0.06] text-muted-foreground border border-white/[0.08]"
-                              }`}
-                            >
-                              {p.role === "admin" ? "Admin" : p.role === "moderator" ? "Moderador" : "Membro"}
-                            </span>
-                          </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-                            <span>E-mail: <strong className="text-foreground">{p.email}</strong></span>
-                            <span>·</span>
-                            <span>Anúncios: <strong>{userAdsCount}</strong></span>
-                            <span>·</span>
-                            <span>Criado em: {formatDate(p.created_at)}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Ações por Usuário */}
-                      <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t sm:border-t-0 border-white/[0.04] pt-2 sm:pt-0">
-                        <div className="flex items-center gap-2">
-                          {/* Seletor rápido de papel (Apenas Admin) */}
-                          {role === "admin" ? (
-                            <select
-                              value={p.role}
-                              onChange={(e) => handleRoleChange(p.id, e.target.value as UserRole)}
-                              className="h-8 rounded-lg border border-white/[0.08] bg-[#14151b] px-2 text-[11px] font-semibold text-foreground focus:border-primary/50 focus:outline-none"
-                            >
-                              <option value="user">Membro (User)</option>
-                              <option value="moderator">Moderador</option>
-                              <option value="admin">Administrador</option>
-                            </select>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground">Papel fixado</span>
-                          )}
-
-                          {/* Ver anúncios do usuário */}
-                          {userAdsCount > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => handleFilterByUser(p.id, p.full_name || p.email)}
-                              className="rounded-lg border border-white/[0.08] bg-[#14151b] px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
-                              title="Ver todos os anúncios deste usuário"
-                            >
-                              Ver {userAdsCount} anúncios
-                            </button>
-                          )}
-
-                          {/* Editar Usuário */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingProfile(p);
-                              setIsUserModalOpen(true);
-                            }}
-                            className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-primary transition-colors"
-                            title="Editar Informações do Usuário"
-                          >
-                            <Edit className="size-3.5" />
-                          </button>
-
-                          {/* Excluir Usuário (Apenas Admin) */}
-                          {role === "admin" && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteUser(p)}
-                              disabled={isCurrentLoggedUser}
-                              className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                              title={isCurrentLoggedUser ? "Você não pode excluir sua própria conta ativa" : "Excluir Usuário"}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                {filteredProfiles.length === 0 ? (
+                  <div className="rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-12 text-center">
+                    <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-purple-500/10 text-purple-400 mb-3 border border-purple-500/20">
+                      <Users className="size-6" />
                     </div>
-                  );
-                })}
+                    <h3 className="text-sm font-bold text-foreground">Nenhum membro encontrado</h3>
+                    <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+                      {userSearch.trim() || userRoleFilter !== "todos"
+                        ? "Nenhum usuário corresponde aos filtros de busca aplicados."
+                        : "Ainda não há outros membros cadastrados no sistema além dos perfis padrão."}
+                    </p>
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                      {(userSearch.trim() || userRoleFilter !== "todos") && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserSearch("");
+                            setUserRoleFilter("todos");
+                          }}
+                          className="rounded-xl border border-white/[0.08] bg-[#14151b] px-3.5 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                        >
+                          Limpar Filtros
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingProfile(null);
+                          setIsUserModalOpen(true);
+                        }}
+                        className="gradient-lime rounded-xl px-4 py-1.5 text-xs font-bold text-black"
+                      >
+                        + Cadastrar Novo Usuário
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  filteredProfiles.map((p) => {
+                    const userAdsCount = allAds.filter((a) => a.user_id === p.id).length;
+                    const isCurrentLoggedUser = p.id === user?.id || p.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim();
+
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="relative size-12 shrink-0 rounded-2xl overflow-hidden bg-[#15171d] border border-white/10 grid place-items-center font-bold text-primary text-base">
+                            {p.avatar_url ? (
+                              <img src={p.avatar_url} alt={p.full_name || "Avatar"} className="size-full object-cover" />
+                            ) : (
+                              ((p.full_name || p.email)?.[0] || "U").toUpperCase()
+                            )}
+                          </div>
+
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-sm font-bold text-foreground">
+                                {p.full_name || "Sem Nome Cadastrado"}
+                              </h4>
+                              {isCurrentLoggedUser && (
+                                <span className="rounded-full bg-primary/20 border border-primary/30 px-2 py-0.2 text-[9px] font-bold text-primary">
+                                  VOCÊ
+                                </span>
+                              )}
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                  p.role === "admin"
+                                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                                    : p.role === "moderator"
+                                    ? "bg-primary/20 text-primary border border-primary/30"
+                                    : "bg-white/[0.06] text-muted-foreground border border-white/[0.08]"
+                                }`}
+                              >
+                                {p.role === "admin" ? "Admin" : p.role === "moderator" ? "Moderador" : "Membro"}
+                              </span>
+                            </div>
+
+                            <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                              <span>E-mail: <strong className="text-foreground">{p.email}</strong></span>
+                              <span>·</span>
+                              <span>Anúncios: <strong>{userAdsCount}</strong></span>
+                              <span>·</span>
+                              <span>Criado em: {formatDate(p.created_at)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Ações por Usuário */}
+                        <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t sm:border-t-0 border-white/[0.04] pt-2 sm:pt-0">
+                          <div className="flex items-center gap-2">
+                            {/* Seletor rápido de papel (Apenas Admin) */}
+                            {role === "admin" ? (
+                              <select
+                                value={p.role}
+                                onChange={(e) => handleRoleChange(p.id, e.target.value as UserRole)}
+                                className="h-8 rounded-lg border border-white/[0.08] bg-[#14151b] px-2 text-[11px] font-semibold text-foreground focus:border-primary/50 focus:outline-none"
+                              >
+                                <option value="user">Membro (User)</option>
+                                <option value="moderator">Moderador</option>
+                                <option value="admin">Administrador</option>
+                              </select>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground">Papel fixado</span>
+                            )}
+
+                            {/* Ver anúncios do usuário */}
+                            {userAdsCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleFilterByUser(p.id, p.full_name || p.email)}
+                                className="rounded-lg border border-white/[0.08] bg-[#14151b] px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                                title="Ver todos os anúncios deste usuário"
+                              >
+                                Ver {userAdsCount} anúncios
+                              </button>
+                            )}
+
+                            {/* Editar Usuário */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingProfile(p);
+                                setIsUserModalOpen(true);
+                              }}
+                              className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-primary transition-colors"
+                              title="Editar Informações do Usuário"
+                            >
+                              <Edit className="size-3.5" />
+                            </button>
+
+                            {/* Excluir Usuário (Apenas Admin) */}
+                            {role === "admin" && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(p)}
+                                disabled={isCurrentLoggedUser}
+                                className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                title={isCurrentLoggedUser ? "Você não pode excluir sua própria conta ativa" : "Excluir Usuário"}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}

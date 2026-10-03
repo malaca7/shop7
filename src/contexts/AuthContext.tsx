@@ -10,6 +10,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, password?: string) => Promise<void>;
   signUpWithEmail: (email: string, password?: string, fullName?: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  loginWithGoogleData: (data: GoogleUserData) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<Profile>) => Promise<void>;
   switchRoleForDemo: (newRole: UserRole) => void;
@@ -28,20 +29,37 @@ export function isUserAdminEmail(email?: string | null): boolean {
 }
 
 const LOCAL_SESSION_KEY = "shop7_active_auth_session_v1";
+const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
 
 function syncLocalProfile(profile: Profile) {
-  const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
   if (typeof window === "undefined") return;
   const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
   let list: Profile[] = [];
   if (raw) {
-    try { list = JSON.parse(raw); } catch {}
+    try {
+      list = JSON.parse(raw);
+    } catch {}
   }
-  const existingIndex = list.findIndex(p => p.id === profile.id || p.email === profile.email);
+  if (!Array.isArray(list)) list = [];
+
+  const normalizedEmail = (profile.email || "").toLowerCase().trim();
+  const isAdmin = isUserAdminEmail(profile.email);
+  const syncedProfile: Profile = {
+    ...profile,
+    role: isAdmin ? "admin" : profile.role,
+    updated_at: new Date().toISOString(),
+  };
+
+  const existingIndex = list.findIndex(
+    (p) =>
+      p.id === profile.id ||
+      (normalizedEmail && p.email?.toLowerCase().trim() === normalizedEmail)
+  );
+
   if (existingIndex >= 0) {
-    list[existingIndex] = { ...list[existingIndex], ...profile };
+    list[existingIndex] = { ...list[existingIndex], ...syncedProfile };
   } else {
-    list.unshift(profile);
+    list.unshift(syncedProfile);
   }
   localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
 }
@@ -70,19 +88,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .single();
 
             if (prof) {
-              setProfile({
+              const resProf: Profile = {
                 ...(prof as Profile),
                 role: isAdmin ? "admin" : (prof as Profile).role,
-              });
+              };
+              setProfile(resProf);
+              syncLocalProfile(resProf);
             } else {
               const meta = session.user.user_metadata as Record<string, any> | undefined;
-              setProfile({
+              const resProf: Profile = {
                 id: session.user.id,
                 email: session.user.email || "",
-                full_name: (meta?.["full_name"] as string | undefined) || (isAdmin ? "Rogério Malaquias Jr" : null),
-                avatar_url: (meta?.["avatar_url"] as string | undefined) || null,
+                full_name: (meta?.["full_name"] || meta?.["name"] as string | undefined) || (isAdmin ? "Rogério Malaquias Jr" : null),
+                avatar_url: (meta?.["avatar_url"] || meta?.["picture"] as string | undefined) || null,
                 role: isAdmin ? "admin" : "user",
-              });
+                created_at: new Date().toISOString(),
+              };
+              setProfile(resProf);
+              syncLocalProfile(resProf);
             }
           } else {
             // Verificar sessão local salva
@@ -96,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
                 setUser(parsed.user);
                 setProfile(parsed.profile);
+                if (parsed.profile) syncLocalProfile(parsed.profile);
               } catch {
                 localStorage.removeItem(LOCAL_SESSION_KEY);
               }
@@ -113,6 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
               setUser(parsed.user);
               setProfile(parsed.profile);
+              if (parsed.profile) syncLocalProfile(parsed.profile);
             } catch {
               localStorage.removeItem(LOCAL_SESSION_KEY);
             }
@@ -130,6 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             setUser(parsed.user);
             setProfile(parsed.profile);
+            if (parsed.profile) syncLocalProfile(parsed.profile);
           } catch {
             localStorage.removeItem(LOCAL_SESSION_KEY);
           }
@@ -150,6 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             LOCAL_SESSION_KEY,
             JSON.stringify({ user: defaultUser, profile: defaultProfile })
           );
+          syncLocalProfile(defaultProfile);
         }
       }
 
@@ -187,6 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     full_name: (meta?.["full_name"] || meta?.["name"] || (isAdmin ? "Rogério Malaquias Jr" : session.user.email?.split("@")[0])) || null,
                     avatar_url: (meta?.["avatar_url"] || meta?.["picture"]) || null,
                     role: isAdmin ? "admin" : "user",
+                    created_at: new Date().toISOString(),
                   };
                   // Forçar inserção no banco caso a trigger não exista
                   try {
@@ -214,8 +242,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     return () => {};
   }, []);
-
-  // (Helper loginWithGoogleData removido, pois usaremos o fluxo padrão do Supabase)
 
   // 1. Login com E-mail e Senha
   const signInWithEmail = async (email: string, password?: string) => {
@@ -332,44 +358,93 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 3. Login oficial via OAuth do Supabase (para evitar problemas de popup e mismatches de domínio)
-  const signInWithGoogle = async () => {
+  // 3. Login com dados do Google (GIS / One-Tap / OAuth)
+  const loginWithGoogleData = async (data: GoogleUserData) => {
     setIsLoading(true);
     try {
+      const isAdmin = isUserAdminEmail(data.email);
+      const userId = "google-" + (data.id || btoa(data.email).slice(0, 10));
+      const newProfile: Profile = {
+        id: userId,
+        email: data.email,
+        full_name: data.full_name || (isAdmin ? "Rogério Malaquias Jr" : data.email.split("@")[0]),
+        avatar_url: data.avatar_url || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+        role: isAdmin ? "admin" : "user",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const newUser = { id: userId, email: data.email };
+
+      // Persistir no Supabase se ativo
       if (isLiveSupabaseConfigured) {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: window.location.origin,
-          },
-        });
-        if (error) throw error;
-      } else {
-        const googleUser = { id: "google-user-777", email: "google.user@gmail.com" };
-        const googleProfile: Profile = {
-          id: "google-user-777",
-          email: "google.user@gmail.com",
-          full_name: "Google Member",
-          avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-          role: "user",
-          created_at: new Date().toISOString(),
-        };
-        setUser(googleUser);
-        setProfile(googleProfile);
-        localStorage.setItem(
-          LOCAL_SESSION_KEY,
-          JSON.stringify({ user: googleUser, profile: googleProfile })
-        );
-        syncLocalProfile(googleProfile);
+        try {
+          await supabase.from("profiles").upsert(newProfile);
+        } catch (err) {
+          console.warn("Aviso: Falha ao sincronizar perfil Google no Supabase:", err);
+        }
       }
-    } catch (err: any) {
-      throw new Error(err.message || "Erro ao conectar com Google");
+
+      setUser(newUser);
+      setProfile(newProfile);
+      localStorage.setItem(
+        LOCAL_SESSION_KEY,
+        JSON.stringify({ user: newUser, profile: newProfile })
+      );
+      syncLocalProfile(newProfile);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 4. Logout / Sair
+  // 4. Fluxo Robusto de Login e Cadastro Google
+  const signInWithGoogle = async () => {
+    setIsLoading(true);
+    try {
+      // 1. Tentar popup oficial do Google Identity Services (GIS)
+      try {
+        const googleData = await promptGoogleOAuthPopup();
+        if (googleData && googleData.email) {
+          await loginWithGoogleData(googleData);
+          return;
+        }
+      } catch (gisError: any) {
+        if (gisError?.message === "POPUP_CLOSED") {
+          throw gisError; // Usuário fechou intencionalmente o popup do Google
+        }
+        console.warn("Google GIS popup não disponível no ambiente atual:", gisError?.message);
+      }
+
+      // 2. Tentar Supabase OAuth caso GIS falhe
+      if (isLiveSupabaseConfigured) {
+        try {
+          const { error } = await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: {
+              redirectTo: window.location.origin,
+            },
+          });
+          if (!error) return;
+        } catch (supaErr) {
+          console.warn("Supabase OAuth falhou:", supaErr);
+        }
+      }
+
+      // 3. Fallback assistido para demonstração e ambientes isolados
+      const defaultGoogleUser: GoogleUserData = {
+        id: "google-member-" + Date.now(),
+        email: "usuario.google@gmail.com",
+        full_name: "Membro Google",
+        avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+        email_verified: true,
+      };
+      await loginWithGoogleData(defaultGoogleUser);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 5. Logout / Sair
   const signOut = async () => {
     setIsLoading(true);
     try {
@@ -388,7 +463,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 5. Atualizar perfil
+  // 6. Atualizar perfil
   const updateProfile = async (data: Partial<Profile>) => {
     if (!user || !profile) return;
     const updated = { ...profile, ...data, updated_at: new Date().toISOString() };
@@ -398,6 +473,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       LOCAL_SESSION_KEY,
       JSON.stringify({ user, profile: updated })
     );
+    syncLocalProfile(updated);
 
     if (isLiveSupabaseConfigured) {
       try {
@@ -408,17 +484,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 6. Seletor de Role para Testes & Demonstração de UI
+  // 7. Seletor de Role para Testes & Demonstração de UI
   const switchRoleForDemo = (newRole: UserRole) => {
     if (!profile || !user) return;
     const updated: Profile = { ...profile, role: newRole };
     setProfile(updated);
-    if (!isLiveSupabaseConfigured) {
-      localStorage.setItem(
-        LOCAL_SESSION_KEY,
-        JSON.stringify({ user, profile: updated })
-      );
-    }
+    localStorage.setItem(
+      LOCAL_SESSION_KEY,
+      JSON.stringify({ user, profile: updated })
+    );
+    syncLocalProfile(updated);
   };
 
   return (
@@ -431,6 +506,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithEmail,
         signUpWithEmail,
         signInWithGoogle,
+        loginWithGoogleData,
         signOut,
         updateProfile,
         switchRoleForDemo,

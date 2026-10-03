@@ -132,13 +132,21 @@ function AuthPage() {
   };
 
   // Atalhos rápidos para testar papéis instantaneamente
-  const handleQuickDemo = async (role: "user" | "mod" | "admin") => {
+  const handleQuickDemo = async (role: "user" | "mod" | "admin" | "google") => {
     if (role === "user") {
       await signInWithEmail("usuario@shop7.com", "123456");
     } else if (role === "mod") {
       await signInWithEmail("moderador@shop7.com", "123456");
-    } else {
+    } else if (role === "admin") {
       await signInWithEmail("malacarogeriojr@gmail.com", "123456");
+    } else if (role === "google") {
+      await loginWithGoogleData({
+        id: "google-member-quick",
+        email: "membro.google@gmail.com",
+        full_name: "Google Membro",
+        avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+        email_verified: true,
+      });
     }
     navigate({ to: "/minha-conta" });
   };
@@ -330,7 +338,14 @@ function AuthPage() {
                   onClick={() => handleQuickDemo("user")}
                   className="rounded-lg border border-white/[0.06] bg-[#14151a] px-2.5 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:border-white/20"
                 >
-                  👤 Usuário
+                  👤 Membro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemo("google")}
+                  className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[10px] font-medium text-blue-400 hover:bg-blue-500/20"
+                >
+                  🌐 Google
                 </button>
                 <button
                   type="button"

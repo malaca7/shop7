@@ -1,4 +1,5 @@
 import { supabase, isLiveSupabaseConfigured, type Ad, type AdStatus, type Profile, type UserRole } from "./supabase";
+import { generateValidUuid } from "./utils";
 
 const LOCAL_ADS_KEY = "shop7_local_ads_v1";
 const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
@@ -294,7 +295,7 @@ export const AdsService = {
 
     const newAd: Ad = {
       ...payload,
-      id: "ad-" + Date.now(),
+      id: generateValidUuid(),
     };
     const ads = getLocalAds();
     ads.unshift(newAd);
@@ -514,7 +515,7 @@ export const AdsService = {
     role?: UserRole;
   }): Promise<Profile> {
     const emailClean = (data.email || "").trim().toLowerCase();
-    const newId = "user-" + Date.now();
+    const newId = generateValidUuid(emailClean);
 
     // Se estava na lista de deletados, reativa
     removeDeletedProfileKey(newId);

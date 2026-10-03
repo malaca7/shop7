@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase, isLiveSupabaseConfigured, type Profile, type UserRole } from "@/lib/supabase";
 import { promptGoogleOAuthPopup, type GoogleUserData } from "@/lib/google-auth";
+import { generateValidUuid } from "@/lib/utils";
 
 interface AuthContextType {
   user: { id: string; email: string } | null;
@@ -18,6 +19,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+export function toValidUuid(idOrSeed?: string | null): string {
+  if (!idOrSeed) return generateValidUuid();
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(idOrSeed)) {
+    return idOrSeed;
+  }
+  return generateValidUuid(idOrSeed);
+}
+
 export function isUserAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();
@@ -25,8 +35,16 @@ export function isUserAdminEmail(email?: string | null): boolean {
     normalized === "malacarogeriojr@gmail.com" ||
     normalized === "rogeriomalaquiasjr@gmail.com" ||
     normalized === "admin@shop7.com" ||
-    normalized.includes("admin")
+    normalized.startsWith("admin@")
   );
+}
+
+export function getDefaultAdminName(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  if (normalized === "malacarogeriojr@gmail.com") return "malaca";
+  if (normalized === "rogeriomalaquiasjr@gmail.com") return "Rogério Malaquias";
+  if (normalized.startsWith("admin")) return "Administrador";
+  return email.split("@")[0] || "Usuário";
 }
 
 const LOCAL_SESSION_KEY = "shop7_active_auth_session_v1";
@@ -35,7 +53,6 @@ const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
 function syncLocalProfile(profile: Profile) {
   if (typeof window === "undefined" || !profile) return;
   const normalizedEmail = (profile.email || "").toLowerCase().trim();
-  // Bloqueio rigoroso: nunca registrar contas de fallback ou demo
   if (!normalizedEmail || normalizedEmail === "usuario@shop7.com" || profile.id?.includes("demo")) {
     return;
   }
@@ -49,7 +66,6 @@ function syncLocalProfile(profile: Profile) {
   }
   if (!Array.isArray(list)) list = [];
 
-  // Higienização de contas demo residuais na lista
   list = list.filter(
     (p) =>
       p.email?.toLowerCase().trim() !== "usuario@shop7.com" &&
@@ -60,13 +76,14 @@ function syncLocalProfile(profile: Profile) {
   const isAdmin = isUserAdminEmail(profile.email);
   const syncedProfile: Profile = {
     ...profile,
+    id: toValidUuid(profile.id || profile.email),
     role: isAdmin ? "admin" : profile.role,
     updated_at: new Date().toISOString(),
   };
 
   const existingIndex = list.findIndex(
     (p) =>
-      p.id === profile.id ||
+      p.id === syncedProfile.id ||
       (normalizedEmail && p.email?.toLowerCase().trim() === normalizedEmail)
   );
 
@@ -77,14 +94,13 @@ function syncLocalProfile(profile: Profile) {
   }
   localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
 
-  // Remove da lista de deletados caso o usuário esteja se re-registrando
   try {
     const deletedRaw = localStorage.getItem("shop7_deleted_profiles_v1");
     if (deletedRaw) {
       let deletedSet = new Set<string>(JSON.parse(deletedRaw));
       let changed = false;
-      if (deletedSet.has(profile.id.toLowerCase().trim())) {
-        deletedSet.delete(profile.id.toLowerCase().trim());
+      if (deletedSet.has(syncedProfile.id.toLowerCase().trim())) {
+        deletedSet.delete(syncedProfile.id.toLowerCase().trim());
         changed = true;
       }
       if (normalizedEmail && deletedSet.has(normalizedEmail)) {
@@ -103,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Carrega a sessão inicial sem fallbacks fictícios
+  // Carrega a sessão inicial com total resiliência
   useEffect(() => {
     async function initAuth() {
       setIsLoading(true);
@@ -114,7 +130,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             const parsed = JSON.parse(saved);
             const email = (parsed?.user?.email || "").toLowerCase().trim();
-            // Descartar imediatamente se for usuário legado de demonstração ou inválido
             if (
               !email ||
               email === "usuario@shop7.com" ||
@@ -127,13 +142,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               return;
             }
 
-            if (isUserAdminEmail(email)) {
-              if (parsed.profile) parsed.profile.role = "admin";
-              localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
-            }
-            setUser(parsed.user);
-            setProfile(parsed.profile);
-            if (parsed.profile) syncLocalProfile(parsed.profile);
+            const validId = toValidUuid(parsed?.user?.id || email);
+            const isAdmin = isUserAdminEmail(email);
+            const resolvedRole: UserRole = isAdmin ? "admin" : (parsed.profile?.role || "user");
+            const defaultName = isAdmin ? getDefaultAdminName(email) : (email.split("@")[0] || "Usuário");
+
+            const validProfile: Profile = {
+              id: validId,
+              email,
+              full_name: parsed.profile?.full_name || defaultName,
+              avatar_url: parsed.profile?.avatar_url || null,
+              role: resolvedRole,
+              created_at: parsed.profile?.created_at || new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+
+            const validUser = { id: validId, email };
+            setUser(validUser);
+            setProfile(validProfile);
+            localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify({ user: validUser, profile: validProfile }));
+            syncLocalProfile(validProfile);
           } catch {
             localStorage.removeItem(LOCAL_SESSION_KEY);
             setUser(null);
@@ -148,29 +176,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isLiveSupabaseConfigured) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            const isAdmin = isUserAdminEmail(session.user.email);
-            setUser({ id: session.user.id, email: session.user.email || "" });
-            // Buscar perfil no PostgreSQL
+          if (session?.user?.email) {
+            const email = session.user.email.toLowerCase().trim();
+            const isAdmin = isUserAdminEmail(email);
+            const validId = toValidUuid(session.user.id);
+            setUser({ id: validId, email });
+
             const { data: prof } = await supabase
               .from("profiles")
               .select("*")
               .eq("id", session.user.id)
-              .single();
+              .maybeSingle();
 
             if (prof) {
               const resProf: Profile = {
                 ...(prof as Profile),
+                id: validId,
                 role: isAdmin ? "admin" : (prof as Profile).role,
               };
               setProfile(resProf);
               syncLocalProfile(resProf);
             } else {
               const meta = session.user.user_metadata as Record<string, any> | undefined;
+              const defaultName = isAdmin ? getDefaultAdminName(email) : (email.split("@")[0] || "Usuário");
               const resProf: Profile = {
-                id: session.user.id,
-                email: session.user.email || "",
-                full_name: (meta?.["full_name"] || meta?.["name"] as string | undefined) || (isAdmin ? "Rogério Malaquias Jr" : null),
+                id: validId,
+                email,
+                full_name: (meta?.["full_name"] || meta?.["name"] as string | undefined) || defaultName,
                 avatar_url: (meta?.["avatar_url"] || meta?.["picture"] as string | undefined) || null,
                 role: isAdmin ? "admin" : "user",
                 created_at: new Date().toISOString(),
@@ -182,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             restoreLocalSession();
           }
         } catch (err) {
-          console.warn("Supabase auth offline, verificando sessão local válida:", err);
+          console.warn("Supabase auth offline, restaurando sessão local:", err);
           restoreLocalSession();
         }
       } else {
@@ -197,48 +229,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listener de mudanças no Supabase Auth
     if (isLiveSupabaseConfigured) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (_event, session) => {
+        async (event, session) => {
           try {
-            if (session?.user) {
-              const isAdmin = isUserAdminEmail(session.user.email);
-              setUser({ id: session.user.id, email: session.user.email || "" });
+            if (event === "SIGNED_OUT") {
+              setUser(null);
+              setProfile(null);
+              localStorage.removeItem(LOCAL_SESSION_KEY);
+              return;
+            }
+
+            if (session?.user?.email) {
+              const email = session.user.email.toLowerCase().trim();
+              const isAdmin = isUserAdminEmail(email);
+              const validId = toValidUuid(session.user.id);
+              setUser({ id: validId, email });
+
               try {
                 const { data: prof } = await supabase
                   .from("profiles")
                   .select("*")
                   .eq("id", session.user.id)
-                  .single();
+                  .maybeSingle();
+
                 if (prof) {
                   const resolvedProfile = {
                     ...(prof as Profile),
+                    id: validId,
                     role: isAdmin ? "admin" : (prof as Profile).role,
                   };
                   setProfile(resolvedProfile);
                   syncLocalProfile(resolvedProfile);
                 } else {
                   const meta = session.user.user_metadata as Record<string, any> | undefined;
-                  const newProf = {
-                    id: session.user.id,
-                    email: session.user.email || "",
-                    full_name: (meta?.["full_name"] || meta?.["name"] || (isAdmin ? "Rogério Malaquias Jr" : session.user.email?.split("@")[0])) || null,
+                  const defaultName = isAdmin ? getDefaultAdminName(email) : (email.split("@")[0] || "Usuário");
+                  const newProf: Profile = {
+                    id: validId,
+                    email,
+                    full_name: (meta?.["full_name"] || meta?.["name"]) || defaultName,
                     avatar_url: (meta?.["avatar_url"] || meta?.["picture"]) || null,
                     role: isAdmin ? "admin" : "user",
                     created_at: new Date().toISOString(),
                   };
-                  // Forçar inserção no banco caso a trigger não exista
                   try {
                     await supabase.from("profiles").upsert({ ...newProf, updated_at: new Date().toISOString() });
-                  } catch(e) {}
+                  } catch (e) {}
                   
-                  setProfile(newProf as Profile);
-                  syncLocalProfile(newProf as Profile);
+                  setProfile(newProf);
+                  syncLocalProfile(newProf);
                 }
               } catch (profErr) {
                 console.warn("Erro ao buscar perfil em onAuthStateChange:", profErr);
               }
-            } else {
-              setUser(null);
-              setProfile(null);
             }
           } catch (authErr) {
             console.warn("Erro no listener de mudanças de autenticação:", authErr);
@@ -257,10 +298,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       let loggedInWithSupabase = false;
+      const normalizedEmail = email.trim().toLowerCase();
+      const validId = toValidUuid(normalizedEmail);
+
       if (isLiveSupabaseConfigured) {
         try {
           const { data, error } = await supabase.auth.signInWithPassword({
-            email,
+            email: normalizedEmail,
             password: password || "123456",
           });
           if (!error && data?.user) {
@@ -272,29 +316,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!loggedInWithSupabase) {
-        const isAdmin = isUserAdminEmail(email);
+        const isAdmin = isUserAdminEmail(normalizedEmail);
         let role: UserRole = isAdmin ? "admin" : "user";
-        let name = email.split("@")[0] || "Usuário";
-        if (isAdmin) {
-          role = "admin";
-          name =
-            email.toLowerCase() === "malacarogeriojr@gmail.com" ||
-            email.toLowerCase() === "rogeriomalaquiasjr@gmail.com"
-              ? "Rogério Malaquias Jr"
-              : "Administrador SHOP7";
-        } else if (email.includes("mod")) {
-          role = "moderator";
-          name = "Moderador SHOP7";
-        }
+        let name = isAdmin ? getDefaultAdminName(normalizedEmail) : (normalizedEmail.split("@")[0] || "Usuário");
 
-        const newUser = { id: "user-" + btoa(email).slice(0, 10), email };
+        const newUser = { id: validId, email: normalizedEmail };
         const newProfile: Profile = {
-          id: newUser.id,
-          email,
+          id: validId,
+          email: normalizedEmail,
           full_name: name,
           avatar_url: null,
           role,
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
 
         setUser(newUser);
@@ -314,13 +348,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUpWithEmail = async (email: string, password?: string, fullName?: string) => {
     setIsLoading(true);
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       let registeredWithSupabase = false;
-      let newId = "user-" + Date.now();
+      let newId = toValidUuid(normalizedEmail);
       
       if (isLiveSupabaseConfigured) {
         try {
           const { data, error } = await supabase.auth.signUp({
-            email,
+            email: normalizedEmail,
             password: password || "123456",
             options: {
               data: { full_name: fullName },
@@ -328,26 +363,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           if (!error && data?.user) {
             registeredWithSupabase = true;
-            newId = data.user.id;
+            newId = toValidUuid(data.user.id);
           }
         } catch (e) {
           console.warn("Supabase indisponível, cadastrando via sessão local:", e);
         }
       }
 
-      const isAdmin = isUserAdminEmail(email);
+      const isAdmin = isUserAdminEmail(normalizedEmail);
+      const defaultName = isAdmin ? getDefaultAdminName(normalizedEmail) : (fullName || normalizedEmail.split("@")[0] || "Usuário SHOP7");
+
       const newProfile: Profile = {
         id: newId,
-        email,
-        full_name: fullName || (isAdmin ? "Rogério Malaquias Jr" : email.split("@")[0]) || "Usuário SHOP7",
+        email: normalizedEmail,
+        full_name: defaultName,
         avatar_url: null,
         role: isAdmin ? "admin" : "user",
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
       
-      const newUser = { id: newId, email };
+      const newUser = { id: newId, email: normalizedEmail };
 
-      // Se registrou no Supabase, tenta forçar o upsert do perfil caso a trigger SQL falhe
       if (registeredWithSupabase) {
         try {
           await supabase.from("profiles").upsert({
@@ -409,27 +446,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Se o perfil já existe, reutiliza o ID e mantém o papel anterior (ou eleva a admin se for admin)
-      let resolvedUserId: string;
-      let resolvedRole: UserRole;
-      let resolvedCreatedAt: string;
+      // UUID determinístico e válido para o banco PostgreSQL
+      const resolvedUserId = existingProfile?.id ? toValidUuid(existingProfile.id) : toValidUuid(data.id || normalizedEmail);
+      const resolvedRole: UserRole = isAdmin ? "admin" : (existingProfile?.role || "user");
+      const resolvedCreatedAt = existingProfile?.created_at || new Date().toISOString();
 
-      if (existingProfile) {
-        resolvedUserId = existingProfile.id;
-        resolvedRole = isAdmin ? "admin" : existingProfile.role;
-        resolvedCreatedAt = existingProfile.created_at || new Date().toISOString();
-      } else {
-        // Criar usuário caso não exista, impedindo duplicidade
-        resolvedUserId = "google-" + (data.id || btoa(normalizedEmail).slice(0, 10));
-        resolvedRole = isAdmin ? "admin" : "user";
-        resolvedCreatedAt = new Date().toISOString();
-      }
+      const defaultName = isAdmin ? getDefaultAdminName(normalizedEmail) : (normalizedEmail.split("@")[0] || "Usuário");
+      const resolvedFullName = data.full_name || existingProfile?.full_name || defaultName;
+      const resolvedAvatar = data.avatar_url || existingProfile?.avatar_url || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80";
 
       const resolvedProfile: Profile = {
         id: resolvedUserId,
         email: normalizedEmail,
-        full_name: data.full_name || existingProfile?.full_name || (isAdmin ? "Rogério Malaquias Jr" : normalizedEmail.split("@")[0]),
-        avatar_url: data.avatar_url || existingProfile?.avatar_url || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+        full_name: resolvedFullName,
+        avatar_url: resolvedAvatar,
         role: resolvedRole,
         created_at: resolvedCreatedAt,
         updated_at: new Date().toISOString(),
@@ -437,7 +467,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const newUser = { id: resolvedUserId, email: normalizedEmail };
 
-      // Persistir perfil no Supabase
+      // Persistir perfil no Supabase se configurado
       if (isLiveSupabaseConfigured) {
         try {
           await supabase.from("profiles").upsert(resolvedProfile);

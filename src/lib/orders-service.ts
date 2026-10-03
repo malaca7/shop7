@@ -1,4 +1,5 @@
 import { supabase, isLiveSupabaseConfigured, type Order, type OrderStatus } from "./supabase";
+import { generateValidUuid } from "./utils";
 
 const LOCAL_ORDERS_KEY = "shop7_local_orders_v1";
 
@@ -128,7 +129,7 @@ export const OrdersService = {
     }
 
     const fallbackOrder: Order = {
-      id: "PED-" + Math.floor(10000 + Math.random() * 90000),
+      id: generateValidUuid(),
       ...newOrderPayload,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

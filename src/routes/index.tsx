@@ -30,6 +30,7 @@ import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { ProductCard } from "@/components/marketplace/ProductCard";
+import { CheckoutModal } from "@/components/marketplace/CheckoutModal";
 import { AdsService } from "@/lib/ads-service";
 import type { Ad } from "@/lib/supabase";
 import {
@@ -72,8 +73,11 @@ function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<"featured" | "bestsellers" | "services">("featured");
   const [searchFilter, setSearchFilter] = useState<string>("");
+  const [selectedProductForBuy, setSelectedProductForBuy] = useState<Product | null>(null);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
   const [approvedAds, setApprovedAds] = useState<Ad[]>([]);
+
 
   useEffect(() => {
     async function loadApproved() {
@@ -292,7 +296,14 @@ function HomePage() {
             {displayedProducts.length > 0 ? (
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4 w-full">
                 {displayedProducts.map((p) => (
-                  <ProductCard key={p.id} product={p} />
+                  <ProductCard
+                    key={p.id}
+                    product={p}
+                    onBuy={(prod) => {
+                      setSelectedProductForBuy(prod);
+                      setIsCheckoutOpen(true);
+                    }}
+                  />
                 ))}
               </div>
             ) : (
@@ -455,6 +466,16 @@ function HomePage() {
 
       {/* Native App Mobile Bottom Navigation Bar */}
       <MobileBottomNav />
+
+      {/* Modal de Checkout / Compra Protegida */}
+      <CheckoutModal
+        product={selectedProductForBuy}
+        isOpen={isCheckoutOpen}
+        onClose={() => {
+          setIsCheckoutOpen(false);
+          setSelectedProductForBuy(null);
+        }}
+      />
     </div>
   );
 }

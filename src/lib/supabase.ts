@@ -35,6 +35,25 @@ export interface Ad {
   seller_name?: string | null;
 }
 
+export type OrderStatus = "pending" | "completed" | "cancelled" | "refunded";
+
+export interface Order {
+  id: string;
+  ad_id?: string | null;
+  buyer_id: string;
+  seller_id?: string | null;
+  title: string;
+  price: number;
+  quantity: number;
+  total_price: number;
+  status: OrderStatus;
+  seller_name?: string | null;
+  buyer_name?: string | null;
+  activation_code?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
 const env = import.meta.env as Record<string, string | undefined>;
 export const supabaseUrl = (env["VITE_SUPABASE_URL"] || "").trim();
 export const supabaseAnonKey = (env["VITE_SUPABASE_ANON_KEY"] || "").trim();

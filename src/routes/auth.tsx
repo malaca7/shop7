@@ -2,12 +2,11 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import {
   ShieldCheck,
-  Mail,
-  Lock,
-  User,
-  ArrowRight,
+  CheckCircle2,
   Sparkles,
   Loader2,
+  UserCheck,
+  Lock,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,7 +20,7 @@ import {
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
-    meta: [{ title: "Entrar ou Cadastrar — SHOP7" }],
+    meta: [{ title: "Entrar ou Cadastrar via Google — SHOP7" }],
   }),
   component: AuthPage,
 });
@@ -29,19 +28,12 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const {
     user,
-    signInWithEmail,
-    signUpWithEmail,
     signInWithGoogle,
     loginWithGoogleData,
     isLoading,
   } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
   // Se já logado, redireciona para a central da conta
@@ -91,29 +83,6 @@ function AuthPage() {
     };
   }, [loginWithGoogleData, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) {
-      setError("Por favor, preencha todos os campos.");
-      return;
-    }
-    setError(null);
-    setLoading(true);
-
-    try {
-      if (mode === "login") {
-        await signInWithEmail(email, password);
-      } else {
-        await signUpWithEmail(email, password, name);
-      }
-      navigate({ to: "/minha-conta" });
-    } catch (err: any) {
-      setError(err?.message || "Erro na autenticação. Verifique suas credenciais.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleGoogleLogin = async () => {
     setError(null);
     setGoogleLoading(true);
@@ -122,7 +91,7 @@ function AuthPage() {
       navigate({ to: "/minha-conta" });
     } catch (err: any) {
       if (err?.message === "POPUP_CLOSED") {
-        // Usuário fechou o popup do Google voluntariamente, sem erro alarmante
+        // Usuário fechou o popup do Google voluntariamente
         return;
       }
       setError(err?.message || "Não foi possível conectar com o Google no momento.");
@@ -131,17 +100,15 @@ function AuthPage() {
     }
   };
 
-
-
   return (
-    <div className="dark min-h-screen bg-[#070709] text-foreground flex flex-col justify-between">
+    <div className="dark min-h-screen bg-[#070709] text-foreground flex flex-col justify-between antialiased">
       <Header />
 
       <main className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           {/* Card Principal */}
           <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-6 sm:p-8 shadow-2xl">
-            {/* Glow verde limão sutil de fundo */}
+            {/* Glow sutil de fundo */}
             <div className="pointer-events-none absolute -right-20 -top-20 size-48 rounded-full bg-primary/10 blur-3xl" />
 
             {/* Logo e Cabeçalho */}
@@ -150,45 +117,27 @@ function AuthPage() {
                 <Logo size="lg" />
               </Link>
               <h1 className="mt-4 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                {mode === "login" ? "Bem-vindo de volta" : "Crie sua conta SHOP7"}
+                Acesse o SHOP7
               </h1>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {mode === "login"
-                  ? "Acesse seus anúncios, pedidos e reputação"
-                  : "Compre e venda itens e serviços com pagamento protegido"}
+              <p className="mt-1 text-xs text-muted-foreground max-w-xs">
+                Login e cadastro realizados exclusivamente via Google OAuth para máxima segurança.
               </p>
             </div>
 
-            {/* Seletor de Modo: Entrar ou Cadastrar */}
-            <div className="mt-6 grid grid-cols-2 rounded-xl border border-white/[0.06] bg-[#121317] p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("login");
-                  setError(null);
-                }}
-                className={`rounded-lg py-2 text-xs font-semibold transition-all ${
-                  mode === "login"
-                    ? "bg-[#1b1d24] text-primary shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Entrar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("signup");
-                  setError(null);
-                }}
-                className={`rounded-lg py-2 text-xs font-semibold transition-all ${
-                  mode === "signup"
-                    ? "bg-[#1b1d24] text-primary shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Criar Conta
-              </button>
+            {/* Informações do Fluxo Seguro */}
+            <div className="mt-6 rounded-2xl border border-white/[0.06] bg-[#121317] p-4 space-y-2 text-xs">
+              <div className="flex items-start gap-2.5 text-muted-foreground">
+                <UserCheck className="size-4 text-primary shrink-0 mt-0.5" />
+                <span>
+                  <strong>Verificação automática:</strong> se você já possui conta, o login é efetuado instantaneamente.
+                </span>
+              </div>
+              <div className="flex items-start gap-2.5 text-muted-foreground">
+                <CheckCircle2 className="size-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Zero duplicidade:</strong> novos usuários são cadastrados automaticamente mantendo perfil único.
+                </span>
+              </div>
             </div>
 
             {/* Mensagem de Erro contextual */}
@@ -198,22 +147,22 @@ function AuthPage() {
               </div>
             )}
 
-            {/* Botão Oficial de Login com Google (API Google Identity Services) */}
-            <div className="mt-5">
+            {/* Botão Oficial Exclusivo de Login com Google */}
+            <div className="mt-6">
               <button
                 type="button"
                 onClick={handleGoogleLogin}
-                disabled={googleLoading || loading || isLoading}
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#14151a] py-2.5 text-xs font-semibold text-foreground transition-all hover:border-white/20 hover:bg-[#181a20] active:scale-[0.99] disabled:opacity-60"
+                disabled={googleLoading || isLoading}
+                className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/[0.1] bg-[#14151a] py-3.5 px-4 text-xs font-bold text-foreground transition-all hover:border-primary/50 hover:bg-[#191b22] hover:shadow-[0_0_20px_-4px_rgba(132,204,22,0.25)] active:scale-[0.98] disabled:opacity-60"
               >
                 {googleLoading ? (
                   <>
-                    <Loader2 className="size-4 animate-spin text-primary" />
+                    <Loader2 className="size-5 animate-spin text-primary" />
                     <span>Conectando com o Google...</span>
                   </>
                 ) : (
                   <>
-                    <svg className="size-4 shrink-0" viewBox="0 0 24 24">
+                    <svg className="size-5 shrink-0" viewBox="0 0 24 24">
                       <path
                         fill="#EA4335"
                         d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"
@@ -231,90 +180,16 @@ function AuthPage() {
                         d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 17C3.7 20.7 7.5 23.5 12 23.5z"
                       />
                     </svg>
-                    <span>Continuar com o Google</span>
+                    <span>Entrar ou Cadastrar com Google</span>
                   </>
                 )}
               </button>
             </div>
 
-            <div className="relative my-5 flex items-center justify-center">
-              <div className="w-full border-t border-white/[0.06]" />
-              <span className="absolute bg-[#0c0d10] px-3 text-[10px] uppercase tracking-wider text-muted-foreground">
-                ou com e-mail
-              </span>
-            </div>
-
-            {/* Formulário de E-mail e Senha */}
-            <form onSubmit={handleSubmit} className="space-y-3.5">
-              {mode === "signup" && (
-                <div>
-                  <label className="text-xs font-semibold text-foreground">Nome Completo</label>
-                  <div className="relative mt-1">
-                    <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      type="text"
-                      required
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Seu nome ou nome da loja"
-                      className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#14151a] pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-semibold text-foreground">E-mail</label>
-                <div className="relative mt-1">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="seuemail@exemplo.com"
-                    className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#14151a] pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-foreground">Senha</label>
-                <div className="relative mt-1">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Mínimo de 6 caracteres"
-                    className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#14151a] pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || isLoading || googleLoading}
-                className="gradient-lime mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold text-black shadow-[0_4px_16px_rgba(132,204,22,0.35)] transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
-              >
-                <span>
-                  {loading
-                    ? "Processando..."
-                    : mode === "login"
-                      ? "Entrar na Conta"
-                      : "Criar Minha Conta"}
-                </span>
-                <ArrowRight className="size-4" />
-              </button>
-            </form>
-
-
-
             {/* Selo de Proteção */}
-            <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/70">
+            <div className="mt-6 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/70 border-t border-white/[0.04] pt-4">
               <ShieldCheck className="size-3.5 text-primary/80" />
-              <span>Autenticação protegida com criptografia ponta a ponta</span>
+              <span>Autenticação OAuth 2.0 protegida com criptografia de ponta a ponta</span>
             </div>
           </div>
         </div>

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { PRODUCT_TYPE_LABEL, formatBRL, type Product } from "@/data/catalog";
 import { cn } from "@/lib/utils";
 
-export function ProductCard({ product }: { product: Product }) {
+export function ProductCard({ product, onBuy }: { product: Product; onBuy?: (product: Product) => void }) {
   const price = product.salePrice ?? product.price;
   const discount = product.salePrice
     ? Math.round((1 - product.salePrice / product.price) * 100)
@@ -14,7 +14,15 @@ export function ProductCard({ product }: { product: Product }) {
     <article className="group relative flex w-full flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0e0f13] transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_16px_36px_-12px_rgba(132,204,22,0.22)]">
       {/* Thumbnail Area with Subtle Gradient */}
       <div className={cn("relative aspect-[16/11] w-full overflow-hidden bg-gradient-to-br", product.accent)}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.06),transparent_65%)]" />
+        {product.image ? (
+          <img
+            src={product.image}
+            alt={product.title}
+            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.06),transparent_65%)]" />
+        )}
         
         {/* Badges */}
         <div className="absolute left-2.5 top-2.5 flex flex-wrap gap-1.5">
@@ -79,6 +87,7 @@ export function ProductCard({ product }: { product: Product }) {
 
           <button
             type="button"
+            onClick={() => onBuy && onBuy(product)}
             className="rounded-lg border border-white/[0.08] bg-[#17181e] px-2.5 py-1 text-xs font-medium text-foreground transition-all hover:border-primary/50 hover:bg-primary hover:text-black"
           >
             Comprar
@@ -88,3 +97,4 @@ export function ProductCard({ product }: { product: Product }) {
     </article>
   );
 }
+

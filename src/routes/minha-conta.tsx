@@ -35,7 +35,8 @@ import { CreateAdModal } from "@/components/ads/CreateAdModal";
 import { PermissionsMatrixModal } from "@/components/admin/PermissionsMatrixModal";
 import { ROLE_DETAILS } from "@/lib/permissions";
 import { AdsService } from "@/lib/ads-service";
-import type { Ad, UserRole } from "@/lib/supabase";
+import { OrdersService } from "@/lib/orders-service";
+import type { Ad, Order, UserRole } from "@/lib/supabase";
 import { formatBRL } from "@/data/catalog";
 
 export const Route = createFileRoute("/minha-conta")({
@@ -85,6 +86,7 @@ function MinhaContaPage() {
 
   const [activeTab, setActiveTab] = useState<"anuncios" | "pedidos" | "perfil">("anuncios");
   const [myAds, setMyAds] = useState<Ad[]>([]);
+  const [userOrders, setUserOrders] = useState<Order[]>([]);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingAd, setEditingAd] = useState<Ad | null>(null);
@@ -106,13 +108,17 @@ function MinhaContaPage() {
     }
   }, [user, isLoading, navigate]);
 
-  // Carrega anúncios do usuário e contagem de pendentes para mod/admin
+  // Carrega anúncios e pedidos do usuário
   const loadData = async () => {
     if (!user) return;
     setLoadingAds(true);
     try {
-      const ads = await AdsService.getMyAds(user.id);
+      const [ads, orders] = await Promise.all([
+        AdsService.getMyAds(user.id),
+        OrdersService.getMyPurchases(user.id),
+      ]);
       setMyAds(ads);
+      setUserOrders(orders);
 
       if (role === "moderator" || role === "admin") {
         const pending = await AdsService.getPendingAds();
@@ -124,6 +130,7 @@ function MinhaContaPage() {
       setLoadingAds(false);
     }
   };
+
 
   useEffect(() => {
     loadData();
@@ -384,7 +391,7 @@ function MinhaContaPage() {
           <div className="mt-8 flex items-center gap-2 border-b border-white/[0.06] pb-3">
             {[
               { id: "anuncios", label: "Meus Anúncios", count: myAds.length, icon: Package },
-              { id: "pedidos", label: "Minhas Compras & Pedidos", count: DEMO_ORDERS.length, icon: ShoppingBag },
+              { id: "pedidos", label: "Minhas Compras & Pedidos", count: userOrders.length, icon: ShoppingBag },
               { id: "perfil", label: "Meu Perfil & Segurança", icon: User },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -623,56 +630,74 @@ function MinhaContaPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3">
-                {DEMO_ORDERS.map((ord) => (
-                  <div
-                    key={ord.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
+              {userOrders.length === 0 ? (
+                <div className="rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-12 text-center">
+                  <ShoppingBag className="mx-auto size-10 text-muted-foreground/40" />
+                  <h3 className="mt-3 text-sm font-semibold text-foreground">Você ainda não realizou nenhuma compra</h3>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+                    Navegue pelo nosso marketplace para encontrar produtos digitais, itens físicos, contas e serviços.
+                  </p>
+                  <Link
+                    to="/"
+                    className="gradient-lime mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black"
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary border border-primary/20">
-                        <ShoppingBag className="size-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-primary">{ord.id}</span>
-                          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-                            Entregue / Concluído
-                          </span>
+                    <span>Explorar Marketplace</span>
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {userOrders.map((ord) => (
+                    <div
+                      key={ord.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+                          <ShoppingBag className="size-5" />
                         </div>
-                        <h4 className="mt-1 text-sm font-semibold text-foreground">{ord.title}</h4>
-                        <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-                          <span>Vendedor: <strong>{ord.seller}</strong></span>
-                          <span>·</span>
-                          <span>Data: {new Date(ord.date).toLocaleDateString("pt-BR")}</span>
-                        </div>
-
-                        {ord.code && (
-                          <div className="mt-2.5 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-[#14151b] px-3 py-1 text-xs">
-                            <span className="text-[10px] text-muted-foreground uppercase font-bold">Chave de Ativação:</span>
-                            <code className="text-primary font-mono font-bold select-all">{ord.code}</code>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-primary">{ord.id}</span>
+                            <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                              {ord.status === "completed" ? "Entregue / Concluído" : ord.status}
+                            </span>
                           </div>
-                        )}
+                          <h4 className="mt-1 text-sm font-semibold text-foreground">{ord.title}</h4>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                            <span>Vendedor: <strong>{ord.seller_name || "Vendedor SHOP7"}</strong></span>
+                            <span>·</span>
+                            <span>Data: {new Date(ord.created_at).toLocaleDateString("pt-BR")}</span>
+                          </div>
+
+                          {ord.activation_code && (
+                            <div className="mt-2.5 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-[#14151b] px-3 py-1 text-xs">
+                              <span className="text-[10px] text-muted-foreground uppercase font-bold">Chave de Ativação:</span>
+                              <code className="text-primary font-mono font-bold select-all">{ord.activation_code}</code>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t sm:border-t-0 border-white/[0.04] pt-2 sm:pt-0">
+                        <span className="text-base font-bold font-display text-foreground">
+                          {formatBRL(ord.total_price || ord.price)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => alert(`Recibo do pedido ${ord.id} com garantia de intermediação SHOP7.`)}
+                          className="rounded-lg border border-white/[0.08] bg-[#14151b] px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                        >
+                          Ver Recibo
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 border-t sm:border-t-0 border-white/[0.04] pt-2 sm:pt-0">
-                      <span className="text-base font-bold font-display text-foreground">
-                        {formatBRL(ord.price)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => alert(`Recibo do pedido ${ord.id} com garantia de intermediação SHOP7.`)}
-                        className="rounded-lg border border-white/[0.08] bg-[#14151b] px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                      >
-                        Ver Detalhes
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+
 
           {/* 5. Conteúdo da Aba 3: Perfil & Segurança */}
           {activeTab === "perfil" && (

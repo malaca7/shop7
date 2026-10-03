@@ -222,3 +222,58 @@ UPDATE public.profiles
 SET role = 'admin'
 WHERE LOWER(email) = 'malacarogeriojr@gmail.com';
 
+-- ================================================================
+-- 4. Tabela de Pedidos / Transações (public.orders)
+-- ================================================================
+CREATE TABLE IF NOT EXISTS public.orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ad_id UUID REFERENCES public.ads(id) ON DELETE SET NULL,
+    buyer_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    seller_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
+    quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    total_price NUMERIC(12, 2) NOT NULL CHECK (total_price >= 0),
+    status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'completed', 'cancelled', 'refunded')),
+    seller_name TEXT,
+    buyer_name TEXT,
+    activation_code TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_buyer_id ON public.orders(buyer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_seller_id ON public.orders(seller_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON public.orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON public.orders(created_at DESC);
+
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+
+-- POLÍTICAS: ORDERS (PEDIDOS & TRANSAÇÕES)
+-- 1. SELECT: Comprador vê suas compras, vendedor vê suas vendas, mod e admin vêem tudo
+CREATE POLICY "Visualização de pedidos"
+    ON public.orders FOR SELECT
+    USING (
+        auth.uid() = buyer_id
+        OR auth.uid() = seller_id
+        OR public.is_moderator_or_admin()
+    );
+
+-- 2. INSERT: Usuário autenticado cria pedidos como comprador
+CREATE POLICY "Comprador cria pedido"
+    ON public.orders FOR INSERT
+    WITH CHECK (
+        auth.uid() IS NOT NULL
+        AND auth.uid() = buyer_id
+    );
+
+-- 3. UPDATE: Comprador, Vendedor ou Admin podem atualizar status do pedido
+CREATE POLICY "Atualização de pedidos"
+    ON public.orders FOR UPDATE
+    USING (
+        auth.uid() = buyer_id
+        OR auth.uid() = seller_id
+        OR public.is_admin()
+    );
+
+

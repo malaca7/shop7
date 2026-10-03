@@ -114,7 +114,8 @@ function HomePage() {
       deliveryLabel: ad.type === "servico" ? "Sob Demanda" : "Entrega Protegida",
       accent: "from-lime-500/20 to-emerald-950/40",
       image: ad.images?.[0] || undefined,
-    }));
+      user_id: ad.user_id,
+    } as any));
 
     // Filtra por abas
     let filteredList = userProducts;

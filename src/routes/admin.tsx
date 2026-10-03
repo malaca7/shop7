@@ -575,6 +575,30 @@ function AdminPage() {
             </div>
           )}
 
+          {isSupabaseEgressExceeded && (
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-300 shadow-lg animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="size-5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-amber-200 text-sm">
+                    Supabase: Cota de Transferência (Egress) Atingida (HTTP 402)
+                  </p>
+                  <p className="mt-1 text-amber-200/80 leading-relaxed text-xs">
+                    O projeto Supabase teve a transferência pausada pelo provedor por atingir a cota gratuita. Para que os dados sincronizem instantaneamente na nuvem, acesse o painel da sua organização no Supabase e ajuste o Spend Cap ou realize o upgrade do plano.
+                  </p>
+                </div>
+              </div>
+              <a
+                href="https://supabase.com/dashboard/project/vpxpfbacysibxlfjayks/settings/billing"
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 rounded-xl bg-amber-500/20 border border-amber-500/40 px-3.5 py-2 font-bold text-amber-200 hover:bg-amber-500/30 transition-all text-center"
+              >
+                Abrir Billing no Supabase ↗
+              </a>
+            </div>
+          )}
+
           {/* BARRA DE KPIS & MÉTRICAS EM TEMPO REAL */}
           <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <button

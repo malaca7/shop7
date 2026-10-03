@@ -318,29 +318,34 @@ function AdminPage() {
   // OPERAÇÕES DE USUÁRIOS (ADMIN & MOD)
   // ==========================================
 
-  // Alterar Role do Usuário
+  // Alterar Role do Usuário (Admin)
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     if (role !== "admin") {
       showFeedback("Apenas administradores podem alterar papéis de usuários.", true);
       return;
     }
+    // Atualização otimista imediata na UI
+    setProfiles((prev) =>
+      prev.map((p) => (p.id.toLowerCase().trim() === userId.toLowerCase().trim() ? { ...p, role: newRole } : p))
+    );
     try {
       const updated = await AdsService.updateUserRole(userId, newRole);
       showFeedback(`Nível de acesso de "${updated.full_name || updated.email}" atualizado para ${newRole.toUpperCase()}.`);
       await loadData();
     } catch (err: any) {
       showFeedback(err?.message || "Erro ao atualizar permissão.", true);
+      await loadData();
     }
   };
 
-  // Excluir Usuário
+  // Excluir Usuário (Admin)
   const handleDeleteUser = async (targetUser: Profile) => {
     if (role !== "admin") {
       showFeedback("Apenas administradores podem excluir usuários.", true);
       return;
     }
     const isCurrentActive =
-      targetUser.id === user?.id ||
+      targetUser.id.toLowerCase().trim() === (user?.id || "").toLowerCase().trim() ||
       (user?.email && targetUser.email.toLowerCase().trim() === user.email.toLowerCase().trim());
 
     if (isCurrentActive) {
@@ -350,12 +355,21 @@ function AdminPage() {
     if (!window.confirm(`Atenção: Excluir o usuário "${targetUser.full_name || targetUser.email}" removerá a conta e seus anúncios associados. Confirmar exclusão?`)) {
       return;
     }
+    // Atualização otimista imediata na UI
+    setProfiles((prev) =>
+      prev.filter(
+        (p) =>
+          p.id.toLowerCase().trim() !== targetUser.id.toLowerCase().trim() &&
+          (!targetUser.email || p.email?.toLowerCase().trim() !== targetUser.email.toLowerCase().trim())
+      )
+    );
     try {
       await AdsService.deleteProfile(targetUser.id);
       showFeedback(`Usuário "${targetUser.email}" e seus anúncios foram excluídos com sucesso.`);
       await loadData();
     } catch (err: any) {
       showFeedback(err?.message || "Erro ao excluir usuário.", true);
+      await loadData();
     }
   };
 
@@ -2007,6 +2021,19 @@ function AdminPage() {
           setEditingProfile(null);
         }}
         onSuccess={(p) => {
+          setProfiles((prev) => {
+            const idx = prev.findIndex(
+              (item) =>
+                item.id.toLowerCase().trim() === p.id.toLowerCase().trim() ||
+                (p.email && item.email?.toLowerCase().trim() === p.email.toLowerCase().trim())
+            );
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = p;
+              return updated;
+            }
+            return [p, ...prev];
+          });
           showFeedback(`Usuário "${p.full_name || p.email}" salvo com sucesso!`);
           loadData();
         }}

@@ -94,25 +94,27 @@ class RealtimeSyncEngine {
       if (!Array.isArray(list)) list = [];
 
       const deletedRaw = localStorage.getItem(DELETED_PROFILES_KEY);
-      const deletedSet = new Set(deletedRaw ? JSON.parse(deletedRaw) : []);
+      const deletedSet = new Set(
+        deletedRaw ? (JSON.parse(deletedRaw) as string[]).map((k) => k.toLowerCase().trim()) : []
+      );
 
       let changed = false;
       for (const defAdm of ROOT_ADMINS_DEFAULT) {
-        if (deletedSet.has(defAdm.id) || (defAdm.email && deletedSet.has(defAdm.email))) {
+        const idLower = defAdm.id.toLowerCase().trim();
+        const emailLower = (defAdm.email || "").toLowerCase().trim();
+        if (deletedSet.has(idLower) || (emailLower && deletedSet.has(emailLower))) {
           continue;
         }
+
         const idx = list.findIndex(
           (p) =>
-            p.email?.toLowerCase().trim() === defAdm.email.toLowerCase().trim() ||
-            p.id === defAdm.id
+            p.email?.toLowerCase().trim() === emailLower ||
+            p.id.toLowerCase().trim() === idLower
         );
         if (idx >= 0) {
-          if (list[idx].role !== "admin" || !list[idx].full_name) {
-            list[idx] = {
-              ...list[idx],
-              role: "admin",
-              full_name: list[idx].full_name || defAdm.full_name,
-            };
+          // Se já existe, não sobrescreve o papel (role) atribuído pelo admin
+          if (!list[idx].full_name) {
+            list[idx].full_name = defAdm.full_name;
             changed = true;
           }
         } else {
@@ -132,7 +134,6 @@ class RealtimeSyncEngine {
     this.isConnecting = true;
 
     const brokerUrl = BROKERS[this.currentBrokerIndex % BROKERS.length];
-    console.log(`[SHOP7 Realtime Engine] Conectando ao barramento em nuvem: ${brokerUrl}`);
 
     try {
       this.client = mqtt.connect(brokerUrl, {
@@ -144,12 +145,10 @@ class RealtimeSyncEngine {
       });
 
       this.client.on("connect", () => {
-        console.log(`[SHOP7 Realtime Engine] Conectado e sincronizado com sucesso via ${brokerUrl}!`);
         this.isConnecting = false;
         if (this.client) {
           this.client.subscribe([SYNC_TOPIC, STATE_TOPIC], { qos: 0 }, (err) => {
             if (!err) {
-              // Solicita o estado global aos outros nós online
               this.requestFullState();
             }
           });
@@ -161,20 +160,18 @@ class RealtimeSyncEngine {
           const msgStr = messageBuffer.toString();
           const data: SyncMessage = JSON.parse(msgStr);
           if (data.senderId === this.clientId) {
-            return; // Ignora mensagens originadas por esta própria aba
+            return;
           }
           this.handleIncomingMessage(topic, data);
         } catch (err) {
-          console.warn("[SHOP7 Realtime Engine] Erro ao decodificar mensagem recebida:", err);
+          console.warn("[SHOP7 Realtime Engine] Erro ao decodificar mensagem:", err);
         }
       });
 
       this.client.on("error", (err) => {
-        console.warn(`[SHOP7 Realtime Engine] Erro no broker ${brokerUrl}:`, err.message);
         this.client?.end(true);
         this.client = null;
         this.isConnecting = false;
-        // Alternar para broker redundante
         this.currentBrokerIndex++;
         setTimeout(() => this.connect(), 2000);
       });
@@ -232,12 +229,23 @@ class RealtimeSyncEngine {
     if (!email || email === "usuario@shop7.com" || profile.id.includes("demo")) return;
 
     try {
+      const delRaw = localStorage.getItem(DELETED_PROFILES_KEY);
+      const delSet = new Set(
+        delRaw ? (JSON.parse(delRaw) as string[]).map((k) => k.toLowerCase().trim()) : []
+      );
+      if (delSet.has(profile.id.toLowerCase().trim()) || (email && delSet.has(email))) {
+        // Se este perfil foi explicitamente deletado e a ação não é recente, ignora
+        return;
+      }
+
       const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
       let list: Profile[] = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(list)) list = [];
 
       const idx = list.findIndex(
-        (p) => p.id === profile.id || (email && p.email?.toLowerCase().trim() === email)
+        (p) =>
+          p.id.toLowerCase().trim() === profile.id.toLowerCase().trim() ||
+          (email && p.email?.toLowerCase().trim() === email)
       );
 
       if (idx >= 0) {
@@ -255,21 +263,26 @@ class RealtimeSyncEngine {
 
   private applyProfileDelete(id: string, email?: string) {
     try {
+      const targetId = (id || "").toLowerCase().trim();
+      const targetEmail = (email || "").toLowerCase().trim();
+
       const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
       let list: Profile[] = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(list)) list = [];
 
-      const targetEmail = (email || "").toLowerCase().trim();
       list = list.filter(
-        (p) => p.id !== id && (!targetEmail || p.email?.toLowerCase().trim() !== targetEmail)
+        (p) =>
+          p.id.toLowerCase().trim() !== targetId &&
+          (!targetEmail || p.email?.toLowerCase().trim() !== targetEmail)
       );
 
       localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
 
-      // Grava no deleted set
       const delRaw = localStorage.getItem(DELETED_PROFILES_KEY);
-      const delSet = new Set(delRaw ? JSON.parse(delRaw) : []);
-      if (id) delSet.add(id.toLowerCase().trim());
+      const delSet = new Set(
+        delRaw ? (JSON.parse(delRaw) as string[]).map((k) => k.toLowerCase().trim()) : []
+      );
+      if (targetId) delSet.add(targetId);
       if (targetEmail) delSet.add(targetEmail);
       localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(Array.from(delSet)));
 
@@ -349,29 +362,33 @@ class RealtimeSyncEngine {
         if (!Array.isArray(currentP)) currentP = [];
 
         const delRaw = localStorage.getItem(DELETED_PROFILES_KEY);
-        const delSet = new Set(delRaw ? JSON.parse(delRaw) : []);
+        const delSet = new Set(
+          delRaw ? (JSON.parse(delRaw) as string[]).map((k) => k.toLowerCase().trim()) : []
+        );
 
         const map = new Map<string, Profile>();
         for (const p of currentP) {
-          if (!delSet.has(p.id) && (!p.email || !delSet.has(p.email.toLowerCase().trim()))) {
-            map.set(p.id, p);
+          const em = (p.email || "").toLowerCase().trim();
+          const idL = p.id.toLowerCase().trim();
+          if (!delSet.has(idL) && (!em || !delSet.has(em))) {
+            map.set(idL, p);
           }
         }
         for (const p of payload.profiles) {
           const em = (p.email || "").toLowerCase().trim();
-          if (delSet.has(p.id) || (em && delSet.has(em))) continue;
+          const idL = p.id.toLowerCase().trim();
+          if (delSet.has(idL) || (em && delSet.has(em))) continue;
           if (em === "usuario@shop7.com" || p.id.includes("demo")) continue;
 
-          const existing = map.get(p.id);
+          const existing = map.get(idL);
           if (existing) {
-            // Mescla priorizando timestamps mais recentes
             const tExist = new Date(existing.updated_at || existing.created_at || 0).getTime();
             const tNew = new Date(p.updated_at || p.created_at || 0).getTime();
             if (tNew >= tExist) {
-              map.set(p.id, { ...existing, ...p });
+              map.set(idL, { ...existing, ...p });
             }
           } else {
-            map.set(p.id, p);
+            map.set(idL, p);
           }
         }
         const mergedP = Array.from(map.values());
@@ -429,7 +446,7 @@ class RealtimeSyncEngine {
 
   private respondWithFullState() {
     const now = Date.now();
-    if (now - this.lastStateSyncResponse < 3000) return; // Evita tempestade de respostas
+    if (now - this.lastStateSyncResponse < 3000) return;
     this.lastStateSyncResponse = now;
 
     try {
@@ -521,7 +538,6 @@ class RealtimeSyncEngine {
 
   private publish(msg: SyncMessage, targetTopic = SYNC_TOPIC) {
     if (!this.client || !this.client.connected) {
-      // Tenta reconectar se caiu
       this.connect();
     }
     try {

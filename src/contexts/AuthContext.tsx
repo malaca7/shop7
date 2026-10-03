@@ -77,7 +77,7 @@ function syncLocalProfile(profile: Profile, shouldBroadcast = true) {
   const syncedProfile: Profile = {
     ...profile,
     id: toValidUuid(profile.id || profile.email),
-    role: isAdmin ? "admin" : profile.role,
+    role: profile.role || (isAdmin ? "admin" : "user"),
     updated_at: new Date().toISOString(),
   };
 
@@ -148,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             const validId = toValidUuid(parsed?.user?.id || email);
             const isAdmin = isUserAdminEmail(email);
-            const resolvedRole: UserRole = isAdmin ? "admin" : (parsed.profile?.role || "user");
+            const resolvedRole: UserRole = parsed.profile?.role || (isAdmin ? "admin" : "user");
             const defaultName = isAdmin ? getDefaultAdminName(email) : (email.split("@")[0] || "Usuário");
 
             const validProfile: Profile = {

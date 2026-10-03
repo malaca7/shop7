@@ -72,7 +72,7 @@ function getLocalProfiles(): Profile[] {
       ) {
         const foundIndex = list.findIndex(
           (p) =>
-            p.id === parsed.profile.id ||
+            p.id.toLowerCase().trim() === (parsed.profile.id || "").toLowerCase().trim() ||
             p.email?.toLowerCase().trim() === activeEmail
         );
         if (foundIndex >= 0) {
@@ -85,19 +85,20 @@ function getLocalProfiles(): Profile[] {
     }
   } catch (e) {}
 
-  // Garantir que administradores mestres sempre constem como admin e estejam presentes
+  // Garantir que administradores padrão estejam presentes inicialmente sem sobrescrever papéis personalizados
   const deletedKeys = getDeletedProfileKeys();
   for (const defAdm of ROOT_ADMINS_DEFAULT) {
     const isDeleted =
       deletedKeys.has(defAdm.id.toLowerCase().trim()) ||
-      deletedKeys.has(defAdm.email.toLowerCase().trim());
+      (defAdm.email && deletedKeys.has(defAdm.email.toLowerCase().trim()));
     if (isDeleted) continue;
 
     const existingIndex = list.findIndex(
-      (p) => p.email?.toLowerCase().trim() === defAdm.email.toLowerCase().trim() || p.id === defAdm.id
+      (p) =>
+        p.email?.toLowerCase().trim() === defAdm.email.toLowerCase().trim() ||
+        p.id.toLowerCase().trim() === defAdm.id.toLowerCase().trim()
     );
     if (existingIndex >= 0) {
-      list[existingIndex].role = "admin";
       if (!list[existingIndex].full_name) {
         list[existingIndex].full_name = defAdm.full_name;
       }
@@ -106,7 +107,7 @@ function getLocalProfiles(): Profile[] {
     }
   }
 
-  // Persistir a lista higienizada e com os administradores mestres
+  // Persistir a lista
   if (typeof window !== "undefined") {
     localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
   }
@@ -146,12 +147,10 @@ function removeDeletedProfileKey(idOrEmail?: string | null) {
 }
 
 export const AdsService = {
-  // Inscrição em tempo real para atualizações de anúncios
   subscribeToAds(onEvent: () => void): () => void {
     return subscribeToAds(onEvent);
   },
 
-  // Inscrição em tempo real para atualizações de usuários/perfis
   subscribeToProfiles(onEvent: () => void): () => void {
     return subscribeToProfiles(onEvent);
   },
@@ -166,7 +165,6 @@ export const AdsService = {
           .eq("status", "approved")
           .order("created_at", { ascending: false });
         if (error) {
-          console.warn("Supabase indisponível ao carregar anúncios aprovados, usando fallback local:", error.message);
           return getLocalAds().filter((a) => a.status === "approved");
         }
         if (data && data.length > 0) {
@@ -174,7 +172,6 @@ export const AdsService = {
         }
         return getLocalAds().filter((a) => a.status === "approved");
       } catch (err) {
-        console.warn("Falha de rede em getApprovedAds, usando fallback local:", err);
         return getLocalAds().filter((a) => a.status === "approved");
       }
     }
@@ -192,12 +189,10 @@ export const AdsService = {
           .eq("user_id", userId)
           .order("created_at", { ascending: false });
         if (error) {
-          console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
           return getLocalAds().filter((a) => a.user_id === userId);
         }
         return data || [];
       } catch (err) {
-        console.warn("Falha de rede em getMyAds, usando fallback:", err);
         return getLocalAds().filter((a) => a.user_id === userId);
       }
     }
@@ -214,12 +209,10 @@ export const AdsService = {
           .eq("status", "pending")
           .order("created_at", { ascending: false });
         if (error) {
-          console.warn("Supabase pending ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
           return getLocalAds().filter((a) => a.status === "pending");
         }
         return data || [];
       } catch (err) {
-        console.warn("Falha de rede em getPendingAds, usando fallback:", err);
         return getLocalAds().filter((a) => a.status === "pending");
       }
     }
@@ -234,13 +227,11 @@ export const AdsService = {
         if (statusFilter) query = query.eq("status", statusFilter);
         const { data, error } = await query;
         if (error) {
-          console.warn("Supabase ads indisponível ou tabela ainda não criada, usando fallback:", error.message);
           const all = getLocalAds();
           return statusFilter ? all.filter((a) => a.status === statusFilter) : all;
         }
         return data || [];
       } catch (err) {
-        console.warn("Falha de rede em getAllAds, usando fallback:", err);
         const all = getLocalAds();
         return statusFilter ? all.filter((a) => a.status === statusFilter) : all;
       }
@@ -270,9 +261,7 @@ export const AdsService = {
         if (!error && data) {
           createdAd = data;
         }
-      } catch (e: any) {
-        console.warn("Exceção no Supabase insert, gravando local:", e.message);
-      }
+      } catch (e: any) {}
     }
 
     const newAd: Ad = createdAd || {
@@ -283,7 +272,6 @@ export const AdsService = {
     ads.unshift(newAd);
     saveLocalAds(ads);
 
-    // Notificação global em tempo real
     realtimeSync.broadcastAdUpsert(newAd);
     return newAd;
   },
@@ -311,9 +299,7 @@ export const AdsService = {
         if (!error && data) {
           updatedFromDb = data;
         }
-      } catch (err) {
-        console.warn("Supabase indisponível em updateAd, salvando localmente:", err);
-      }
+      } catch (err) {}
     }
 
     const ads = getLocalAds();
@@ -375,9 +361,7 @@ export const AdsService = {
         if (!error && data) {
           moderatedFromDb = data;
         }
-      } catch (err) {
-        console.warn("Supabase indisponível em moderateAd, aplicando localmente:", err);
-      }
+      } catch (err) {}
     }
 
     const ads = getLocalAds();
@@ -405,13 +389,8 @@ export const AdsService = {
   async deleteAd(id: string): Promise<boolean> {
     if (isLiveSupabaseConfigured) {
       try {
-        const { error } = await supabase.from("ads").delete().eq("id", id);
-        if (error) {
-          console.warn("Falha ao excluir no Supabase, excluindo localmente:", error.message);
-        }
-      } catch (err) {
-        console.warn("Supabase indisponível em deleteAd, excluindo localmente:", err);
-      }
+        await supabase.from("ads").delete().eq("id", id);
+      } catch (err) {}
     }
     const ads = getLocalAds().filter((a) => a.id !== id);
     saveLocalAds(ads);
@@ -425,7 +404,6 @@ export const AdsService = {
     const local = getLocalProfiles();
     const deletedKeys = getDeletedProfileKeys();
 
-    // Filtra perfis locais removendo qualquer um que tenha sido excluído
     const validLocal = local.filter(
       (p) =>
         !deletedKeys.has(p.id.toLowerCase().trim()) &&
@@ -439,17 +417,11 @@ export const AdsService = {
           .select("*")
           .order("created_at", { ascending: false });
 
-        if (error) {
-          console.warn("Supabase profiles indisponível, usando fallback local:", error.message);
-          return validLocal;
-        }
-
-        if (data && Array.isArray(data)) {
-          // Criar mapa de perfis locais por ID e por e-mail para mesclagem inteligente
+        if (!error && data && Array.isArray(data)) {
           const localMapById = new Map<string, Profile>();
           const localMapByEmail = new Map<string, Profile>();
           for (const lp of validLocal) {
-            localMapById.set(lp.id, lp);
+            localMapById.set(lp.id.toLowerCase().trim(), lp);
             if (lp.email) localMapByEmail.set(lp.email.toLowerCase().trim(), lp);
           }
 
@@ -457,16 +429,16 @@ export const AdsService = {
           const processedLocalIds = new Set<string>();
 
           for (const dbProf of data) {
-            const dbId = dbProf.id;
+            const dbId = dbProf.id.toLowerCase().trim();
             const dbEmail = (dbProf.email || "").toLowerCase().trim();
 
-            if (deletedKeys.has(dbId.toLowerCase().trim()) || (dbEmail && deletedKeys.has(dbEmail))) {
+            if (deletedKeys.has(dbId) || (dbEmail && deletedKeys.has(dbEmail))) {
               continue;
             }
 
             const localVersion = localMapById.get(dbId) || (dbEmail ? localMapByEmail.get(dbEmail) : undefined);
             if (localVersion) {
-              processedLocalIds.add(localVersion.id);
+              processedLocalIds.add(localVersion.id.toLowerCase().trim());
               merged.push({
                 ...dbProf,
                 ...localVersion,
@@ -477,7 +449,7 @@ export const AdsService = {
           }
 
           for (const lp of validLocal) {
-            if (!processedLocalIds.has(lp.id)) {
+            if (!processedLocalIds.has(lp.id.toLowerCase().trim())) {
               merged.push(lp);
             }
           }
@@ -485,9 +457,7 @@ export const AdsService = {
           saveLocalProfiles(merged);
           return merged;
         }
-      } catch (err) {
-        console.warn("Supabase offline em getAllProfiles, usando fallback local:", err);
-      }
+      } catch (err) {}
     }
 
     return validLocal;
@@ -532,15 +502,15 @@ export const AdsService = {
         if (!error && dbData) {
           createdFromDb = dbData;
         }
-      } catch (err) {
-        console.warn("Supabase indisponível em createProfile, salvando localmente:", err);
-      }
+      } catch (err) {}
     }
 
     const finalProfile = createdFromDb || newProfile;
     const profiles = getLocalProfiles();
     const filtered = profiles.filter(
-      (p) => p.email?.toLowerCase().trim() !== emailClean && p.id !== finalProfile.id
+      (p) =>
+        p.email?.toLowerCase().trim() !== emailClean &&
+        p.id.toLowerCase().trim() !== finalProfile.id.toLowerCase().trim()
     );
     filtered.unshift(finalProfile);
     saveLocalProfiles(filtered);
@@ -571,16 +541,16 @@ export const AdsService = {
         if (!error && dbData) {
           updatedFromDb = dbData;
         }
-      } catch (err) {
-        console.warn("Supabase indisponível em updateProfileData:", err);
-      }
+      } catch (err) {}
     }
 
     const profiles = getLocalProfiles();
     const normalizedEmail = (data.email || "").toLowerCase().trim();
+    const normalizedId = userId.toLowerCase().trim();
+
     const index = profiles.findIndex(
       (p) =>
-        p.id === userId ||
+        p.id.toLowerCase().trim() === normalizedId ||
         (normalizedEmail && p.email?.toLowerCase().trim() === normalizedEmail)
     );
 
@@ -610,13 +580,13 @@ export const AdsService = {
 
     saveLocalProfiles(profiles);
 
-    // Sincronizar também a sessão ativa se for o usuário logado
+    // Sincronizar sessão ativa caso seja o usuário logado
     try {
       const activeSessionRaw = localStorage.getItem("shop7_active_auth_session_v1");
       if (activeSessionRaw) {
         const parsed = JSON.parse(activeSessionRaw);
         if (
-          parsed?.user?.id === userId ||
+          parsed?.user?.id?.toLowerCase().trim() === normalizedId ||
           (parsed?.user?.email && parsed.user.email.toLowerCase().trim() === finalProfile.email?.toLowerCase().trim())
         ) {
           parsed.profile = { ...parsed.profile, ...finalProfile };
@@ -632,7 +602,8 @@ export const AdsService = {
   // 13. Excluir usuário e seus anúncios (Admin / Moderador)
   async deleteProfile(userId: string): Promise<boolean> {
     const profiles = getLocalProfiles();
-    const target = profiles.find((p) => p.id === userId);
+    const normalizedId = (userId || "").toLowerCase().trim();
+    const target = profiles.find((p) => p.id.toLowerCase().trim() === normalizedId);
     const targetEmail = (target?.email || "").toLowerCase().trim();
 
     addDeletedProfileKey(userId);
@@ -644,14 +615,12 @@ export const AdsService = {
         if (targetEmail) {
           await supabase.from("profiles").delete().eq("email", targetEmail);
         }
-      } catch (err) {
-        console.warn("Supabase indisponível em deleteProfile:", err);
-      }
+      } catch (err) {}
     }
 
     const filteredProfiles = profiles.filter(
       (p) =>
-        p.id !== userId &&
+        p.id.toLowerCase().trim() !== normalizedId &&
         (!targetEmail || p.email?.toLowerCase().trim() !== targetEmail)
     );
     saveLocalProfiles(filteredProfiles);
@@ -659,7 +628,7 @@ export const AdsService = {
     // Remove os anúncios associados ao usuário excluído
     const ads = getLocalAds().filter(
       (a) =>
-        a.user_id !== userId &&
+        a.user_id.toLowerCase().trim() !== normalizedId &&
         (!target?.full_name || a.seller_name !== target.full_name)
     );
     saveLocalAds(ads);
@@ -689,9 +658,7 @@ export const AdsService = {
         if (!error && data) {
           createdFromDb = data;
         }
-      } catch (e: any) {
-        console.warn("Exceção no Supabase adminCreateAd:", e.message);
-      }
+      } catch (e: any) {}
     }
 
     const newAd: Ad = createdFromDb || {
@@ -725,9 +692,7 @@ export const AdsService = {
         if (!error && data) {
           updatedFromDb = data;
         }
-      } catch (err) {
-        console.warn("Supabase indisponível em adminUpdateAd, salvando localmente:", err);
-      }
+      } catch (err) {}
     }
 
     const ads = getLocalAds();
@@ -770,10 +735,6 @@ export const AdsService = {
     };
   },
 };
-
-// ================================================================
-// ASSINATURAS EM TEMPO REAL MULTI-CAMADA
-// ================================================================
 
 export function subscribeToAds(onEvent: () => void): () => void {
   const unsubSupabase = (() => {

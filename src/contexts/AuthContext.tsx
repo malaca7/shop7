@@ -30,6 +30,23 @@ export function isUserAdminEmail(email?: string | null): boolean {
 
 const LOCAL_SESSION_KEY = "shop7_active_auth_session_v1";
 
+function syncLocalProfile(profile: Profile) {
+  const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
+  if (typeof window === "undefined") return;
+  const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
+  let list: Profile[] = [];
+  if (raw) {
+    try { list = JSON.parse(raw); } catch {}
+  }
+  const existingIndex = list.findIndex(p => p.id === profile.id || p.email === profile.email);
+  if (existingIndex >= 0) {
+    list[existingIndex] = { ...list[existingIndex], ...profile };
+  } else {
+    list.unshift(profile);
+  }
+  localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -226,6 +243,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (e) {
           console.warn("Supabase profiles upsert ignorado:", e);
         }
+      } else {
+        syncLocalProfile(newProfile);
       }
     } finally {
       setIsLoading(false);
@@ -279,6 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           LOCAL_SESSION_KEY,
           JSON.stringify({ user: newUser, profile: newProfile })
         );
+        syncLocalProfile(newProfile);
       }
     } finally {
       setIsLoading(false);
@@ -324,6 +344,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           LOCAL_SESSION_KEY,
           JSON.stringify({ user: newUser, profile: newProfile })
         );
+        syncLocalProfile(newProfile);
       }
     } finally {
       setIsLoading(false);

@@ -98,17 +98,17 @@ function HomePage() {
 
   const displayedProducts = useMemo(() => {
     // Converter anúncios aprovados para o formato Product
-    const userProducts: Product[] = approvedAds.map((ad) => ({
+    const userProducts: Product[] = (approvedAds || []).map((ad) => ({
       id: ad.id,
-      title: ad.title,
+      title: ad.title || "",
       slug: ad.id,
-      categorySlug: ad.category,
+      categorySlug: ad.category || "geral",
       productType: ad.type === "servico" ? "servico" : "digital",
-      price: ad.price,
+      price: Number(ad.price) || 0,
       rating: 5.0,
       reviews: 1,
       sales: 0,
-      stock: ad.stock,
+      stock: Number(ad.stock) || 1,
       seller: ad.seller_name || "Anunciante Verificado",
       sellerVerified: true,
       deliveryLabel: ad.type === "servico" ? "Sob Demanda" : "Entrega Protegida",
@@ -131,8 +131,8 @@ function HomePage() {
         selectedCategory === "all" || p.categorySlug === selectedCategory;
       const matchesSearch =
         !searchFilter ||
-        p.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
-        p.seller.toLowerCase().includes(searchFilter.toLowerCase());
+        (p.title || "").toLowerCase().includes(searchFilter.toLowerCase()) ||
+        (p.seller || "").toLowerCase().includes(searchFilter.toLowerCase());
       return matchesCategory && matchesSearch;
     });
   }, [activeTab, selectedCategory, searchFilter, approvedAds]);

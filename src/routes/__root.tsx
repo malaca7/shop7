@@ -36,20 +36,23 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+  console.error("[SHOP7 Error Boundary]", error);
   const router = useRouter();
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+    <div className="flex min-h-screen items-center justify-center bg-[#070709] px-4 text-foreground">
+      <div className="max-w-md w-full text-center rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-8 shadow-2xl">
+        <div className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary border border-primary/20 text-xl font-bold">
+          !
+        </div>
+        <h1 className="text-lg font-bold tracking-tight text-foreground">
+          Não foi possível carregar a página
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+        <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+          {error?.message || "Ocorreu uma instabilidade temporária ao carregar a página. Tente recarregar ou voltar ao início."}
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
@@ -57,15 +60,15 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="gradient-lime inline-flex items-center justify-center rounded-xl px-4 py-2 text-xs font-bold text-black transition-all hover:brightness-110 active:scale-95"
           >
-            Try again
+            Tentar novamente
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex items-center justify-center rounded-xl border border-white/[0.08] bg-[#14151b] px-4 py-2 text-xs font-semibold text-foreground transition-colors hover:border-white/20"
           >
-            Go home
+            Página Inicial
           </a>
         </div>
       </div>

@@ -139,6 +139,16 @@ function removeDeletedProfileKey(idOrEmail?: string | null) {
 }
 
 export const AdsService = {
+  // Inscrição em tempo real para atualizações de anúncios
+  subscribeToAds(onEvent: () => void): () => void {
+    return subscribeToAds(onEvent);
+  },
+
+  // Inscrição em tempo real para atualizações de usuários/perfis
+  subscribeToProfiles(onEvent: () => void): () => void {
+    return subscribeToProfiles(onEvent);
+  },
+
   // 1. Obter anúncios aprovados (Público / Marketplace)
   async getApprovedAds(): Promise<Ad[]> {
     if (isLiveSupabaseConfigured) {
@@ -746,38 +756,62 @@ export const AdsService = {
 // ASSINATURAS EM TEMPO REAL (SUPABASE REALTIME CHANNELS)
 // ================================================================
 
-export function subscribeToAds(onEvent: () => void) {
+export function subscribeToAds(onEvent: () => void): () => void {
   if (!isLiveSupabaseConfigured) return () => {};
-  const channel = supabase
-    .channel("realtime_ads_changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "ads" },
-      () => {
-        onEvent();
-      }
-    )
-    .subscribe();
+  try {
+    const channelId = "rt_ads_" + Math.random().toString(36).substring(2, 8);
+    const channel = supabase
+      .channel(channelId)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ads" },
+        () => {
+          try {
+            onEvent();
+          } catch (e) {
+            console.warn("Erro ao processar evento de anúncios:", e);
+          }
+        }
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  } catch (err) {
+    console.warn("Falha ao inicializar canal realtime de anúncios:", err);
+    return () => {};
+  }
 }
 
-export function subscribeToProfiles(onEvent: () => void) {
+export function subscribeToProfiles(onEvent: () => void): () => void {
   if (!isLiveSupabaseConfigured) return () => {};
-  const channel = supabase
-    .channel("realtime_profiles_changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "profiles" },
-      () => {
-        onEvent();
-      }
-    )
-    .subscribe();
+  try {
+    const channelId = "rt_profiles_" + Math.random().toString(36).substring(2, 8);
+    const channel = supabase
+      .channel(channelId)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        () => {
+          try {
+            onEvent();
+          } catch (e) {
+            console.warn("Erro ao processar evento de perfis:", e);
+          }
+        }
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  } catch (err) {
+    console.warn("Falha ao inicializar canal realtime de perfis:", err);
+    return () => {};
+  }
 }

@@ -35,25 +35,42 @@ function saveLocalOrders(orders: Order[]) {
   localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(orders));
 }
 
-export function subscribeToOrders(onEvent: () => void) {
+export function subscribeToOrders(onEvent: () => void): () => void {
   if (!isLiveSupabaseConfigured) return () => {};
-  const channel = supabase
-    .channel("realtime_orders_changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "orders" },
-      () => {
-        onEvent();
-      }
-    )
-    .subscribe();
+  try {
+    const channelId = "rt_orders_" + Math.random().toString(36).substring(2, 8);
+    const channel = supabase
+      .channel(channelId)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => {
+          try {
+            onEvent();
+          } catch (e) {
+            console.warn("Erro ao processar evento de pedidos:", e);
+          }
+        }
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  } catch (err) {
+    console.warn("Falha ao inicializar canal realtime de pedidos:", err);
+    return () => {};
+  }
 }
 
 export const OrdersService = {
+  // Inscrição em tempo real para atualizações de pedidos
+  subscribeToOrders(onEvent: () => void): () => void {
+    return subscribeToOrders(onEvent);
+  },
+
   // 1. Criar novo pedido (Compra realizada por usuário)
   async createOrder(params: {
     ad_id?: string;

@@ -1501,6 +1501,53 @@ function AdminPage() {
                         <th className="py-3.5 px-3 font-semibold text-center w-20">Ações</th>
                       </tr>
                     </thead>
+                    <tbody className="divide-y divide-white/[0.04]">
+                      {matrixFeatures.filter((feat) => {
+                        const matchesSearch =
+                          feat.name.toLowerCase().includes(permSearch.toLowerCase()) ||
+                          feat.description.toLowerCase().includes(permSearch.toLowerCase());
+                        const matchesCat = permCategory === "todos" || feat.category === permCategory;
+                        return matchesSearch && matchesCat;
+                      }).map((feat) => (
+                        <tr key={feat.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="py-3 pl-4 pr-3">
+                            <div className="font-semibold text-white flex items-center gap-2">
+                              <span>{feat.name}</span>
+                              <span className="rounded bg-white/[0.05] px-1.5 py-0.2 text-[9px] font-medium text-muted-foreground">
+                                {feat.category}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground/80 mt-0.5 leading-relaxed">
+                              {feat.description}
+                            </p>
+                          </td>
+
+                          {/* Membro */}
+                          <td className="py-3 px-3 text-center align-middle">
+                            {feat.user ? (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-500/15 text-emerald-400">
+                                <CheckCircle2 className="size-4" />
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-red-500/10 text-red-400/60">
+                                <XCircle className="size-4" />
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Moderador */}
+                          <td className="py-3 px-3 text-center align-middle">
+                            {feat.moderator ? (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-500/15 text-emerald-400">
+                                <CheckCircle2 className="size-4" />
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-red-500/10 text-red-400/60">
+                                <XCircle className="size-4" />
+                              </span>
+                            )}
+                          </td>
+
                           {/* Admin */}
                           <td className="py-3 px-3 text-center align-middle">
                             {feat.admin ? (

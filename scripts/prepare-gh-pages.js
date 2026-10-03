@@ -61,6 +61,7 @@ copyDirRecursive(path.join(outputPublicDir, "assets"), path.join(rootDir, "asset
 copyDirRecursive(path.join(outputPublicDir, "auth"), path.join(rootDir, "auth"));
 copyDirRecursive(path.join(outputPublicDir, "minha-conta"), path.join(rootDir, "minha-conta"));
 copyDirRecursive(path.join(outputPublicDir, "moderacao"), path.join(rootDir, "moderacao"));
+copyDirRecursive(path.join(outputPublicDir, "admin"), path.join(rootDir, "admin"));
 
 // 6. Copiar arquivos de ícones (favicons, logos) da pasta public para a raiz e para .output/public
 const publicDir = path.join(rootDir, "public");

@@ -13,6 +13,7 @@ const itemsToClean = [
   "auth",
   "minha-conta",
   "moderacao",
+  "admin",
 ];
 
 for (const item of itemsToClean) {

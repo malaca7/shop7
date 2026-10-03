@@ -62,6 +62,26 @@ function syncLocalProfile(profile: Profile) {
     list.unshift(syncedProfile);
   }
   localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
+
+  // Remove da lista de deletados caso o usuário esteja se re-registrando
+  try {
+    const deletedRaw = localStorage.getItem("shop7_deleted_profiles_v1");
+    if (deletedRaw) {
+      let deletedSet = new Set<string>(JSON.parse(deletedRaw));
+      let changed = false;
+      if (deletedSet.has(profile.id.toLowerCase().trim())) {
+        deletedSet.delete(profile.id.toLowerCase().trim());
+        changed = true;
+      }
+      if (normalizedEmail && deletedSet.has(normalizedEmail)) {
+        deletedSet.delete(normalizedEmail);
+        changed = true;
+      }
+      if (changed) {
+        localStorage.setItem("shop7_deleted_profiles_v1", JSON.stringify(Array.from(deletedSet)));
+      }
+    }
+  } catch (e) {}
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

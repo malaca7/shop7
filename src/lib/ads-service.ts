@@ -99,7 +99,7 @@ function getLocalProfiles(): Profile[] {
       if (!list[existingIndex].full_name || list[existingIndex].full_name === "Usuário") {
         list[existingIndex].full_name = defAdm.full_name;
       }
-      list[existingIndex].role = "admin";
+      list[existingIndex].role = defAdm.role;
     } else {
       list.push(defAdm);
     }

@@ -90,7 +90,6 @@ BEGIN
         COALESCE(NEW.raw_user_meta_data->>'avatar_url', NEW.raw_user_meta_data->>'picture', NULL),
         CASE
             WHEN LOWER(NEW.email) = 'malacarogeriojr@gmail.com' THEN 'admin'
-            WHEN LOWER(NEW.email) = 'rogeriomalaquiasjr@gmail.com' THEN 'admin'
             ELSE 'user'
         END
     );
@@ -217,10 +216,14 @@ CREATE POLICY "Exclusão de anúncios"
         OR public.is_admin()
     );
 
--- Garantir que os administradores mestres recebam a role 'admin'
+-- Garantir que apenas o administrador mestre receba a role 'admin' e o restante 'user'
 UPDATE public.profiles
 SET role = 'admin'
-WHERE LOWER(email) IN ('malacarogeriojr@gmail.com', 'rogeriomalaquiasjr@gmail.com');
+WHERE LOWER(email) = 'malacarogeriojr@gmail.com';
+
+UPDATE public.profiles
+SET role = 'user'
+WHERE LOWER(email) != 'malacarogeriojr@gmail.com';
 
 -- ================================================================
 -- 4. Tabela de Pedidos / Transações (public.orders)

@@ -38,7 +38,6 @@ export function toValidUuid(idOrSeed?: string | null): string {
 
 export const ROOT_ADMIN_EMAILS = [
   "malacarogeriojr@gmail.com",
-  "rogeriomalaquiasjr@gmail.com",
 ];
 
 export function isUserAdminEmail(email?: string | null): boolean {
@@ -50,7 +49,6 @@ export function isUserAdminEmail(email?: string | null): boolean {
 export function getDefaultAdminName(email: string): string {
   const normalized = email.trim().toLowerCase();
   if (normalized === "malacarogeriojr@gmail.com") return "malaca";
-  if (normalized === "rogeriomalaquiasjr@gmail.com") return "Rogério Malaquias";
   return email.split("@")[0] || "Usuário";
 }
 

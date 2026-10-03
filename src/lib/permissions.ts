@@ -444,7 +444,6 @@ export function canPerformUserAction(
     const email = (targetProfile.email || "").toLowerCase().trim();
     if (
       email === "malacarogeriojr@gmail.com" ||
-      email === "rogeriomalaquiasjr@gmail.com" ||
       email === "admin@shop7.com"
     ) {
       return {

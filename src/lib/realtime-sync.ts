@@ -18,21 +18,14 @@ const DELETED_PROFILES_KEY = "shop7_deleted_profiles_v1";
 
 export const ROOT_ADMIN_EMAILS = [
   "malacarogeriojr@gmail.com",
-  "rogeriomalaquiasjr@gmail.com",
 ];
 
 export function isRootAdminKey(idOrEmail?: string | null): boolean {
   if (!idOrEmail) return false;
   const k = idOrEmail.toLowerCase().trim();
-  if (ROOT_ADMIN_EMAILS.includes(k)) return true;
-  if (
-    k === "00000000-0000-4000-8000-000000000001" ||
-    k === "00000000-0000-4000-8000-000000000002"
-  ) return true;
-  if (
-    k === generateValidUuid("malacarogeriojr@gmail.com") ||
-    k === generateValidUuid("rogeriomalaquiasjr@gmail.com")
-  ) return true;
+  if (k === "malacarogeriojr@gmail.com") return true;
+  if (k === "00000000-0000-4000-8000-000000000001") return true;
+  if (k === generateValidUuid("malacarogeriojr@gmail.com")) return true;
   return false;
 }
 
@@ -51,7 +44,7 @@ export const ROOT_ADMINS_DEFAULT: Profile[] = [
     email: "rogeriomalaquiasjr@gmail.com",
     full_name: "Rogério Malaquias",
     avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-    role: "admin",
+    role: "user",
     created_at: "2026-10-03T13:54:28.419Z",
     updated_at: "2026-10-03T13:54:28.419Z",
   },
@@ -147,8 +140,8 @@ class RealtimeSyncEngine {
             list[idx].full_name = defAdm.full_name;
             changed = true;
           }
-          if (list[idx].role !== "admin") {
-            list[idx].role = "admin";
+          if (list[idx].role !== defAdm.role) {
+            list[idx].role = defAdm.role;
             changed = true;
           }
         } else {

@@ -31,39 +31,86 @@ function getLocalOrders(): Order[] {
   }
 }
 
+function notifyLocalOrdersChange() {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("shop7_sync_event", { detail: { type: "orders" } }));
+    if ("BroadcastChannel" in window) {
+      const bc = new BroadcastChannel("shop7_sync_bus");
+      bc.postMessage({ type: "orders" });
+      bc.close();
+    }
+  } catch {}
+}
+
 function saveLocalOrders(orders: Order[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(orders));
+  notifyLocalOrdersChange();
 }
 
 export function subscribeToOrders(onEvent: () => void): () => void {
-  if (!isLiveSupabaseConfigured) return () => {};
-  try {
-    const channelId = "rt_orders_" + Math.random().toString(36).substring(2, 8);
-    const channel = supabase
-      .channel(channelId)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        () => {
-          try {
-            onEvent();
-          } catch (e) {
-            console.warn("Erro ao processar evento de pedidos:", e);
+  const unsubSupabase = (() => {
+    if (!isLiveSupabaseConfigured) return () => {};
+    try {
+      const channelId = "rt_orders_" + Math.random().toString(36).substring(2, 8);
+      const channel = supabase
+        .channel(channelId)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "orders" },
+          () => {
+            try {
+              onEvent();
+            } catch (e) {}
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    return () => {
-      try {
-        supabase.removeChannel(channel);
-      } catch {}
-    };
-  } catch (err) {
-    console.warn("Falha ao inicializar canal realtime de pedidos:", err);
-    return () => {};
+      return () => {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      };
+    } catch {
+      return () => {};
+    }
+  })();
+
+  const handleLocal = (e: any) => {
+    if (e?.detail?.type === "orders" || !e?.detail?.type) {
+      onEvent();
+    }
+  };
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === LOCAL_ORDERS_KEY) {
+      onEvent();
+    }
+  };
+
+  let bc: BroadcastChannel | null = null;
+  if (typeof window !== "undefined") {
+    window.addEventListener("shop7_sync_event", handleLocal);
+    window.addEventListener("storage", handleStorage);
+    if ("BroadcastChannel" in window) {
+      bc = new BroadcastChannel("shop7_sync_bus");
+      bc.onmessage = (msg) => {
+        if (msg.data?.type === "orders") {
+          onEvent();
+        }
+      };
+    }
   }
+
+  return () => {
+    unsubSupabase();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("shop7_sync_event", handleLocal);
+      window.removeEventListener("storage", handleStorage);
+      if (bc) bc.close();
+    }
+  };
 }
 
 export const OrdersService = {

@@ -23,9 +23,22 @@ function getLocalAds(): Ad[] {
   }
 }
 
+function notifyLocalChange(type: "ads" | "profiles" | "orders") {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("shop7_sync_event", { detail: { type } }));
+    if ("BroadcastChannel" in window) {
+      const bc = new BroadcastChannel("shop7_sync_bus");
+      bc.postMessage({ type });
+      bc.close();
+    }
+  } catch {}
+}
+
 function saveLocalAds(ads: Ad[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(ads));
+  notifyLocalChange("ads");
 }
 
 function getLocalProfiles(): Profile[] {
@@ -124,12 +137,18 @@ function getLocalProfiles(): Profile[] {
     }
   }
 
+  // Persistir a lista higienizada e com os administradores mestres
+  if (typeof window !== "undefined") {
+    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
+  }
+
   return list;
 }
 
 function saveLocalProfiles(profiles: Profile[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
+  notifyLocalChange("profiles");
 }
 
 const DELETED_PROFILES_KEY = "shop7_deleted_profiles_v1";
@@ -779,61 +798,129 @@ export const AdsService = {
 // ================================================================
 
 export function subscribeToAds(onEvent: () => void): () => void {
-  if (!isLiveSupabaseConfigured) return () => {};
-  try {
-    const channelId = "rt_ads_" + Math.random().toString(36).substring(2, 8);
-    const channel = supabase
-      .channel(channelId)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ads" },
-        () => {
-          try {
-            onEvent();
-          } catch (e) {
-            console.warn("Erro ao processar evento de anúncios:", e);
+  const unsubSupabase = (() => {
+    if (!isLiveSupabaseConfigured) return () => {};
+    try {
+      const channelId = "rt_ads_" + Math.random().toString(36).substring(2, 8);
+      const channel = supabase
+        .channel(channelId)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "ads" },
+          () => {
+            try {
+              onEvent();
+            } catch (e) {}
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    return () => {
-      try {
-        supabase.removeChannel(channel);
-      } catch {}
-    };
-  } catch (err) {
-    console.warn("Falha ao inicializar canal realtime de anúncios:", err);
-    return () => {};
+      return () => {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      };
+    } catch {
+      return () => {};
+    }
+  })();
+
+  const handleLocal = (e: any) => {
+    if (e?.detail?.type === "ads" || !e?.detail?.type) {
+      onEvent();
+    }
+  };
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === LOCAL_ADS_KEY) {
+      onEvent();
+    }
+  };
+
+  let bc: BroadcastChannel | null = null;
+  if (typeof window !== "undefined") {
+    window.addEventListener("shop7_sync_event", handleLocal);
+    window.addEventListener("storage", handleStorage);
+    if ("BroadcastChannel" in window) {
+      bc = new BroadcastChannel("shop7_sync_bus");
+      bc.onmessage = (msg) => {
+        if (msg.data?.type === "ads") {
+          onEvent();
+        }
+      };
+    }
   }
+
+  return () => {
+    unsubSupabase();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("shop7_sync_event", handleLocal);
+      window.removeEventListener("storage", handleStorage);
+      if (bc) bc.close();
+    }
+  };
 }
 
 export function subscribeToProfiles(onEvent: () => void): () => void {
-  if (!isLiveSupabaseConfigured) return () => {};
-  try {
-    const channelId = "rt_profiles_" + Math.random().toString(36).substring(2, 8);
-    const channel = supabase
-      .channel(channelId)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "profiles" },
-        () => {
-          try {
-            onEvent();
-          } catch (e) {
-            console.warn("Erro ao processar evento de perfis:", e);
+  const unsubSupabase = (() => {
+    if (!isLiveSupabaseConfigured) return () => {};
+    try {
+      const channelId = "rt_profiles_" + Math.random().toString(36).substring(2, 8);
+      const channel = supabase
+        .channel(channelId)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "profiles" },
+          () => {
+            try {
+              onEvent();
+            } catch (e) {}
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    return () => {
-      try {
-        supabase.removeChannel(channel);
-      } catch {}
-    };
-  } catch (err) {
-    console.warn("Falha ao inicializar canal realtime de perfis:", err);
-    return () => {};
+      return () => {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      };
+    } catch {
+      return () => {};
+    }
+  })();
+
+  const handleLocal = (e: any) => {
+    if (e?.detail?.type === "profiles" || !e?.detail?.type) {
+      onEvent();
+    }
+  };
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === LOCAL_PROFILES_KEY) {
+      onEvent();
+    }
+  };
+
+  let bc: BroadcastChannel | null = null;
+  if (typeof window !== "undefined") {
+    window.addEventListener("shop7_sync_event", handleLocal);
+    window.addEventListener("storage", handleStorage);
+    if ("BroadcastChannel" in window) {
+      bc = new BroadcastChannel("shop7_sync_bus");
+      bc.onmessage = (msg) => {
+        if (msg.data?.type === "profiles") {
+          onEvent();
+        }
+      };
+    }
   }
+
+  return () => {
+    unsubSupabase();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("shop7_sync_event", handleLocal);
+      window.removeEventListener("storage", handleStorage);
+      if (bc) bc.close();
+    }
+  };
 }

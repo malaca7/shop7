@@ -90,7 +90,7 @@ BEGIN
         COALESCE(NEW.raw_user_meta_data->>'avatar_url', NEW.raw_user_meta_data->>'picture', NULL),
         CASE
             WHEN LOWER(NEW.email) = 'malacarogeriojr@gmail.com' THEN 'admin'
-            WHEN LOWER(NEW.email) LIKE '%admin%' THEN 'admin'
+            WHEN LOWER(NEW.email) = 'rogeriomalaquiasjr@gmail.com' THEN 'admin'
             ELSE 'user'
         END
     );

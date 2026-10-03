@@ -89,7 +89,7 @@ function getLocalProfiles(): Profile[] {
   const deletedKeys = getDeletedProfileKeys();
   const defaultAdmins: Profile[] = [
     {
-      id: "admin-malaca-root",
+      id: generateValidUuid("malacarogeriojr@gmail.com"),
       email: "malacarogeriojr@gmail.com",
       full_name: "malaca",
       avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
@@ -98,7 +98,7 @@ function getLocalProfiles(): Profile[] {
       updated_at: new Date().toISOString(),
     },
     {
-      id: "admin-rogerio-root",
+      id: generateValidUuid("rogeriomalaquiasjr@gmail.com"),
       email: "rogeriomalaquiasjr@gmail.com",
       full_name: "Rogério Malaquias",
       avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",

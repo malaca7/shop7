@@ -28,22 +28,21 @@ export function toValidUuid(idOrSeed?: string | null): string {
   return generateValidUuid(idOrSeed);
 }
 
+export const ROOT_ADMIN_EMAILS = [
+  "malacarogeriojr@gmail.com",
+  "rogeriomalaquiasjr@gmail.com",
+];
+
 export function isUserAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();
-  return (
-    normalized === "malacarogeriojr@gmail.com" ||
-    normalized === "rogeriomalaquiasjr@gmail.com" ||
-    normalized === "admin@shop7.com" ||
-    normalized.startsWith("admin@")
-  );
+  return ROOT_ADMIN_EMAILS.includes(normalized);
 }
 
 export function getDefaultAdminName(email: string): string {
   const normalized = email.trim().toLowerCase();
   if (normalized === "malacarogeriojr@gmail.com") return "malaca";
   if (normalized === "rogeriomalaquiasjr@gmail.com") return "Rogério Malaquias";
-  if (normalized.startsWith("admin")) return "Administrador";
   return email.split("@")[0] || "Usuário";
 }
 

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase, isLiveSupabaseConfigured, type Profile, type UserRole } from "@/lib/supabase";
 import { promptGoogleOAuthPopup, type GoogleUserData } from "@/lib/google-auth";
 import { generateValidUuid } from "@/lib/utils";
+import { realtimeSync, ROOT_ADMINS_DEFAULT } from "@/lib/realtime-sync";
 
 interface AuthContextType {
   user: { id: string; email: string } | null;
@@ -49,7 +50,7 @@ export function getDefaultAdminName(email: string): string {
 const LOCAL_SESSION_KEY = "shop7_active_auth_session_v1";
 const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
 
-function syncLocalProfile(profile: Profile) {
+function syncLocalProfile(profile: Profile, shouldBroadcast = true) {
   if (typeof window === "undefined" || !profile) return;
   const normalizedEmail = (profile.email || "").toLowerCase().trim();
   if (!normalizedEmail || normalizedEmail === "usuario@shop7.com" || profile.id?.includes("demo")) {
@@ -111,6 +112,10 @@ function syncLocalProfile(profile: Profile) {
       }
     }
   } catch (e) {}
+
+  if (shouldBroadcast) {
+    realtimeSync.broadcastProfileUpsert(syncedProfile);
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -160,7 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(validUser);
             setProfile(validProfile);
             localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify({ user: validUser, profile: validProfile }));
-            syncLocalProfile(validProfile);
+            syncLocalProfile(validProfile, false);
           } catch {
             localStorage.removeItem(LOCAL_SESSION_KEY);
             setUser(null);
@@ -194,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 role: isAdmin ? "admin" : (prof as Profile).role,
               };
               setProfile(resProf);
-              syncLocalProfile(resProf);
+              syncLocalProfile(resProf, false);
             } else {
               const meta = session.user.user_metadata as Record<string, any> | undefined;
               const defaultName = isAdmin ? getDefaultAdminName(email) : (email.split("@")[0] || "Usuário");
@@ -207,7 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 created_at: new Date().toISOString(),
               };
               setProfile(resProf);
-              syncLocalProfile(resProf);
+              syncLocalProfile(resProf, false);
             }
           } else {
             restoreLocalSession();
@@ -224,6 +229,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     initAuth();
+
+    // Inscrição em tempo real para sincronizar perfil ativo se alterado por admin em outra tela
+    const unsubRealtime = realtimeSync.subscribe((type) => {
+      if (type === "profiles" || type === "all") {
+        try {
+          const raw = localStorage.getItem(LOCAL_SESSION_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const activeEmail = (parsed?.user?.email || "").toLowerCase().trim();
+            const activeId = parsed?.user?.id;
+            if (activeEmail || activeId) {
+              const profilesRaw = localStorage.getItem(LOCAL_PROFILES_KEY);
+              if (profilesRaw) {
+                const list: Profile[] = JSON.parse(profilesRaw);
+                const found = list.find(
+                  (p) =>
+                    p.id === activeId ||
+                    (activeEmail && p.email?.toLowerCase().trim() === activeEmail)
+                );
+                if (found) {
+                  setProfile((prev) => {
+                    if (!prev) return found;
+                    if (prev.role !== found.role || prev.full_name !== found.full_name || prev.avatar_url !== found.avatar_url) {
+                      const updated = { ...prev, ...found };
+                      localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify({ user: { id: found.id, email: found.email }, profile: updated }));
+                      return updated;
+                    }
+                    return prev;
+                  });
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+    });
 
     // Listener de mudanças no Supabase Auth
     if (isLiveSupabaseConfigured) {
@@ -286,10 +327,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       );
       return () => {
+        unsubRealtime();
         subscription.unsubscribe();
       };
     }
-    return () => {};
+    return () => {
+      unsubRealtime();
+    };
   }, []);
 
   // 1. Login com E-mail e Senha
@@ -416,7 +460,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       let existingProfile: Profile | null = null;
 
-      // 1. Verificar automaticamente se a conta Google já está cadastrada no Supabase
+      // 1. Verificar se a conta já existe no Supabase
       if (isLiveSupabaseConfigured) {
         try {
           const { data: dbProf } = await supabase
@@ -487,12 +531,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-
   // 4. Fluxo Robusto de Login e Cadastro Google
   const signInWithGoogle = async () => {
     setIsLoading(true);
     try {
-      // 1. Tentar popup oficial do Google Identity Services (GIS)
       try {
         const googleData = await promptGoogleOAuthPopup();
         if (googleData && googleData.email) {
@@ -501,12 +543,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (gisError: any) {
         if (gisError?.message === "POPUP_CLOSED") {
-          throw gisError; // Usuário fechou intencionalmente o popup do Google
+          throw gisError;
         }
-        console.warn("Google GIS popup não disponível no ambiente atual:", gisError?.message);
+        console.warn("Google GIS popup não disponível:", gisError?.message);
       }
 
-      // 2. Tentar Supabase OAuth caso GIS falhe
       if (isLiveSupabaseConfigured) {
         try {
           const { error } = await supabase.auth.signInWithOAuth({
@@ -521,7 +562,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Se chegar aqui e nenhuma autenticação retornou, lance erro.
       throw new Error("Não foi possível autenticar com o Google no momento.");
     } finally {
       setIsLoading(false);

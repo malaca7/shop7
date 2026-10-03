@@ -1,9 +1,8 @@
 import { supabase, isLiveSupabaseConfigured, type Order, type OrderStatus } from "./supabase";
 import { generateValidUuid } from "./utils";
+import { realtimeSync } from "./realtime-sync";
 
 const LOCAL_ORDERS_KEY = "shop7_local_orders_v1";
-
-const INITIAL_DEMO_ORDERS: Order[] = [];
 
 function getLocalOrders(): Order[] {
   if (typeof window === "undefined") return [];
@@ -14,7 +13,6 @@ function getLocalOrders(): Order[] {
   try {
     const list: Order[] = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
-    // Higienização automática: remover pedidos fictícios residuais
     const cleaned = list.filter(
       (o) =>
         o.buyer_id !== "user-demo" &&
@@ -31,22 +29,9 @@ function getLocalOrders(): Order[] {
   }
 }
 
-function notifyLocalOrdersChange() {
-  if (typeof window === "undefined") return;
-  try {
-    window.dispatchEvent(new CustomEvent("shop7_sync_event", { detail: { type: "orders" } }));
-    if ("BroadcastChannel" in window) {
-      const bc = new BroadcastChannel("shop7_sync_bus");
-      bc.postMessage({ type: "orders" });
-      bc.close();
-    }
-  } catch {}
-}
-
 function saveLocalOrders(orders: Order[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(orders));
-  notifyLocalOrdersChange();
 }
 
 export function subscribeToOrders(onEvent: () => void): () => void {
@@ -77,39 +62,15 @@ export function subscribeToOrders(onEvent: () => void): () => void {
     }
   })();
 
-  const handleLocal = (e: any) => {
-    if (e?.detail?.type === "orders" || !e?.detail?.type) {
+  const unsubEngine = realtimeSync.subscribe((type) => {
+    if (type === "orders" || type === "all") {
       onEvent();
     }
-  };
-
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === LOCAL_ORDERS_KEY) {
-      onEvent();
-    }
-  };
-
-  let bc: BroadcastChannel | null = null;
-  if (typeof window !== "undefined") {
-    window.addEventListener("shop7_sync_event", handleLocal);
-    window.addEventListener("storage", handleStorage);
-    if ("BroadcastChannel" in window) {
-      bc = new BroadcastChannel("shop7_sync_bus");
-      bc.onmessage = (msg) => {
-        if (msg.data?.type === "orders") {
-          onEvent();
-        }
-      };
-    }
-  }
+  });
 
   return () => {
     unsubSupabase();
-    if (typeof window !== "undefined") {
-      window.removeEventListener("shop7_sync_event", handleLocal);
-      window.removeEventListener("storage", handleStorage);
-      if (bc) bc.close();
-    }
+    unsubEngine();
   };
 }
 
@@ -153,6 +114,7 @@ export const OrdersService = {
           : null),
     };
 
+    let createdOrder: Order | null = null;
     if (isLiveSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -162,20 +124,14 @@ export const OrdersService = {
           .single();
 
         if (!error && data) {
-          const local = getLocalOrders();
-          local.unshift(data);
-          saveLocalOrders(local);
-          return data;
-        }
-        if (error) {
-          console.warn("Aviso ao criar pedido no Supabase:", error.message);
+          createdOrder = data;
         }
       } catch (err: any) {
         console.warn("Falha ao registrar pedido no Supabase:", err?.message || err);
       }
     }
 
-    const fallbackOrder: Order = {
+    const finalOrder: Order = createdOrder || {
       id: generateValidUuid(),
       ...newOrderPayload,
       created_at: new Date().toISOString(),
@@ -183,9 +139,11 @@ export const OrdersService = {
     };
 
     const local = getLocalOrders();
-    local.unshift(fallbackOrder);
+    local.unshift(finalOrder);
     saveLocalOrders(local);
-    return fallbackOrder;
+
+    realtimeSync.broadcastOrderUpsert(finalOrder);
+    return finalOrder;
   },
 
   // 2. Obter compras de um usuário (comprador)
@@ -255,6 +213,7 @@ export const OrdersService = {
 
   // 5. Atualizar status de pedido
   async updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order> {
+    let updatedOrder: Order | null = null;
     if (isLiveSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -265,7 +224,7 @@ export const OrdersService = {
           .single();
 
         if (!error && data) {
-          return data;
+          updatedOrder = data;
         }
       } catch (err) {
         console.warn("Falha em updateOrderStatus:", err);
@@ -275,10 +234,20 @@ export const OrdersService = {
     const local = getLocalOrders();
     const idx = local.findIndex((o) => o.id === orderId);
     if (idx !== -1) {
-      local[idx].status = status;
-      local[idx].updated_at = new Date().toISOString();
+      const order = updatedOrder || {
+        ...local[idx],
+        status,
+        updated_at: new Date().toISOString(),
+      };
+      local[idx] = order;
       saveLocalOrders(local);
-      return local[idx];
+      realtimeSync.broadcastOrderUpsert(order);
+      return order;
+    }
+
+    if (updatedOrder) {
+      realtimeSync.broadcastOrderUpsert(updatedOrder);
+      return updatedOrder;
     }
     throw new Error("Pedido não encontrado");
   },

@@ -1,13 +1,12 @@
 import { supabase, isLiveSupabaseConfigured, type Ad, type AdStatus, type Profile, type UserRole } from "./supabase";
 import { generateValidUuid } from "./utils";
+import { realtimeSync, ROOT_ADMINS_DEFAULT } from "./realtime-sync";
 
 const LOCAL_ADS_KEY = "shop7_local_ads_v1";
 const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
+const DELETED_PROFILES_KEY = "shop7_deleted_profiles_v1";
 
-// Mock inicial realista para demonstração imediata
 const INITIAL_DEMO_ADS: Ad[] = [];
-
-const INITIAL_DEMO_PROFILES: Profile[] = [];
 
 function getLocalAds(): Ad[] {
   if (typeof window === "undefined") return INITIAL_DEMO_ADS;
@@ -17,32 +16,20 @@ function getLocalAds(): Ad[] {
     return INITIAL_DEMO_ADS;
   }
   try {
-    return JSON.parse(raw);
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : INITIAL_DEMO_ADS;
   } catch {
     return INITIAL_DEMO_ADS;
   }
 }
 
-function notifyLocalChange(type: "ads" | "profiles" | "orders") {
-  if (typeof window === "undefined") return;
-  try {
-    window.dispatchEvent(new CustomEvent("shop7_sync_event", { detail: { type } }));
-    if ("BroadcastChannel" in window) {
-      const bc = new BroadcastChannel("shop7_sync_bus");
-      bc.postMessage({ type });
-      bc.close();
-    }
-  } catch {}
-}
-
 function saveLocalAds(ads: Ad[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(ads));
-  notifyLocalChange("ads");
 }
 
 function getLocalProfiles(): Profile[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined") return ROOT_ADMINS_DEFAULT;
   const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
   let list: Profile[] = [];
   if (raw) {
@@ -81,7 +68,7 @@ function getLocalProfiles(): Profile[] {
         activeEmail &&
         activeEmail !== "usuario@shop7.com" &&
         !activeEmail.includes("shop7.local") &&
-        !parsed.profile.id?.includes("demo")
+        !parsed.profile?.id?.includes("demo")
       ) {
         const foundIndex = list.findIndex(
           (p) =>
@@ -100,38 +87,20 @@ function getLocalProfiles(): Profile[] {
 
   // Garantir que administradores mestres sempre constem como admin e estejam presentes
   const deletedKeys = getDeletedProfileKeys();
-  const defaultAdmins: Profile[] = [
-    {
-      id: generateValidUuid("malacarogeriojr@gmail.com"),
-      email: "malacarogeriojr@gmail.com",
-      full_name: "malaca",
-      avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-      role: "admin",
-      created_at: "2026-10-01T00:00:00.000Z",
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: generateValidUuid("rogeriomalaquiasjr@gmail.com"),
-      email: "rogeriomalaquiasjr@gmail.com",
-      full_name: "Rogério Malaquias",
-      avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-      role: "admin",
-      created_at: "2026-10-01T00:00:00.000Z",
-      updated_at: new Date().toISOString(),
-    },
-  ];
-
-  for (const defAdm of defaultAdmins) {
+  for (const defAdm of ROOT_ADMINS_DEFAULT) {
     const isDeleted =
       deletedKeys.has(defAdm.id.toLowerCase().trim()) ||
       deletedKeys.has(defAdm.email.toLowerCase().trim());
     if (isDeleted) continue;
 
     const existingIndex = list.findIndex(
-      (p) => p.email?.toLowerCase().trim() === defAdm.email.toLowerCase().trim()
+      (p) => p.email?.toLowerCase().trim() === defAdm.email.toLowerCase().trim() || p.id === defAdm.id
     );
     if (existingIndex >= 0) {
       list[existingIndex].role = "admin";
+      if (!list[existingIndex].full_name) {
+        list[existingIndex].full_name = defAdm.full_name;
+      }
     } else {
       list.push(defAdm);
     }
@@ -148,10 +117,7 @@ function getLocalProfiles(): Profile[] {
 function saveLocalProfiles(profiles: Profile[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
-  notifyLocalChange("profiles");
 }
-
-const DELETED_PROFILES_KEY = "shop7_deleted_profiles_v1";
 
 function getDeletedProfileKeys(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -297,28 +263,28 @@ export const AdsService = {
       updated_at: new Date().toISOString(),
     };
 
+    let createdAd: Ad | null = null;
     if (isLiveSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from("ads").insert([payload]).select().single();
         if (!error && data) {
-          const ads = getLocalAds();
-          ads.unshift(data);
-          saveLocalAds(ads);
-          return data;
+          createdAd = data;
         }
-        console.warn("Falha ao inserir no Supabase, gravando local:", error?.message);
       } catch (e: any) {
         console.warn("Exceção no Supabase insert, gravando local:", e.message);
       }
     }
 
-    const newAd: Ad = {
+    const newAd: Ad = createdAd || {
       ...payload,
       id: generateValidUuid(),
     };
     const ads = getLocalAds();
     ads.unshift(newAd);
     saveLocalAds(ads);
+
+    // Notificação global em tempo real
+    realtimeSync.broadcastAdUpsert(newAd);
     return newAd;
   },
 
@@ -371,10 +337,14 @@ export const AdsService = {
       };
       ads[index] = updatedAd;
       saveLocalAds(ads);
+      realtimeSync.broadcastAdUpsert(updatedAd);
       return updatedAd;
     }
 
-    if (updatedFromDb) return updatedFromDb;
+    if (updatedFromDb) {
+      realtimeSync.broadcastAdUpsert(updatedFromDb);
+      return updatedFromDb;
+    }
     throw new Error("Anúncio não encontrado");
   },
 
@@ -420,10 +390,14 @@ export const AdsService = {
       };
       ads[index] = updatedAd;
       saveLocalAds(ads);
+      realtimeSync.broadcastAdUpsert(updatedAd);
       return updatedAd;
     }
 
-    if (moderatedFromDb) return moderatedFromDb;
+    if (moderatedFromDb) {
+      realtimeSync.broadcastAdUpsert(moderatedFromDb);
+      return moderatedFromDb;
+    }
     throw new Error("Anúncio não encontrado");
   },
 
@@ -441,11 +415,13 @@ export const AdsService = {
     }
     const ads = getLocalAds().filter((a) => a.id !== id);
     saveLocalAds(ads);
+    realtimeSync.broadcastAdDelete(id);
     return true;
   },
 
   // 9. Gestão de Usuários (Admin)
   async getAllProfiles(): Promise<Profile[]> {
+    realtimeSync.ensureDefaultAdminsSeeded();
     const local = getLocalProfiles();
     const deletedKeys = getDeletedProfileKeys();
 
@@ -484,16 +460,13 @@ export const AdsService = {
             const dbId = dbProf.id;
             const dbEmail = (dbProf.email || "").toLowerCase().trim();
 
-            // Se foi explicitamente deletado pelo admin, ignore
             if (deletedKeys.has(dbId.toLowerCase().trim()) || (dbEmail && deletedKeys.has(dbEmail))) {
               continue;
             }
 
-            // Verificar se existe versão local editada pelo admin
             const localVersion = localMapById.get(dbId) || (dbEmail ? localMapByEmail.get(dbEmail) : undefined);
             if (localVersion) {
               processedLocalIds.add(localVersion.id);
-              // Priorizar os dados locais que o admin editou
               merged.push({
                 ...dbProf,
                 ...localVersion,
@@ -503,7 +476,6 @@ export const AdsService = {
             }
           }
 
-          // Adicionar qualquer perfil local que ainda não esteja no Supabase
           for (const lp of validLocal) {
             if (!processedLocalIds.has(lp.id)) {
               merged.push(lp);
@@ -536,7 +508,6 @@ export const AdsService = {
     const emailClean = (data.email || "").trim().toLowerCase();
     const newId = generateValidUuid(emailClean);
 
-    // Se estava na lista de deletados, reativa
     removeDeletedProfileKey(newId);
     removeDeletedProfileKey(emailClean);
 
@@ -573,6 +544,8 @@ export const AdsService = {
     );
     filtered.unshift(finalProfile);
     saveLocalProfiles(filtered);
+
+    realtimeSync.broadcastProfileUpsert(finalProfile);
     return finalProfile;
   },
 
@@ -652,6 +625,7 @@ export const AdsService = {
       }
     } catch (e) {}
 
+    realtimeSync.broadcastProfileUpsert(finalProfile);
     return finalProfile;
   },
 
@@ -661,7 +635,6 @@ export const AdsService = {
     const target = profiles.find((p) => p.id === userId);
     const targetEmail = (target?.email || "").toLowerCase().trim();
 
-    // Grava nas chaves deletadas para nunca mais reaparecer mesmo com cache do Supabase
     addDeletedProfileKey(userId);
     if (targetEmail) addDeletedProfileKey(targetEmail);
 
@@ -691,6 +664,7 @@ export const AdsService = {
     );
     saveLocalAds(ads);
 
+    realtimeSync.broadcastProfileDelete(userId, targetEmail);
     return true;
   },
 
@@ -708,27 +682,27 @@ export const AdsService = {
       updated_at: new Date().toISOString(),
     };
 
+    let createdFromDb: Ad | null = null;
     if (isLiveSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from("ads").insert([payload]).select().single();
         if (!error && data) {
-          const ads = getLocalAds();
-          ads.unshift(data);
-          saveLocalAds(ads);
-          return data;
+          createdFromDb = data;
         }
       } catch (e: any) {
         console.warn("Exceção no Supabase adminCreateAd:", e.message);
       }
     }
 
-    const newAd: Ad = {
+    const newAd: Ad = createdFromDb || {
       ...payload,
-      id: "ad-" + Date.now(),
+      id: generateValidUuid(),
     };
     const ads = getLocalAds();
     ads.unshift(newAd);
     saveLocalAds(ads);
+
+    realtimeSync.broadcastAdUpsert(newAd);
     return newAd;
   },
 
@@ -767,10 +741,14 @@ export const AdsService = {
       };
       ads[index] = updatedAd;
       saveLocalAds(ads);
+      realtimeSync.broadcastAdUpsert(updatedAd);
       return updatedAd;
     }
 
-    if (updatedFromDb) return updatedFromDb;
+    if (updatedFromDb) {
+      realtimeSync.broadcastAdUpsert(updatedFromDb);
+      return updatedFromDb;
+    }
     throw new Error("Anúncio não encontrado");
   },
 
@@ -794,7 +772,7 @@ export const AdsService = {
 };
 
 // ================================================================
-// ASSINATURAS EM TEMPO REAL (SUPABASE REALTIME CHANNELS)
+// ASSINATURAS EM TEMPO REAL MULTI-CAMADA
 // ================================================================
 
 export function subscribeToAds(onEvent: () => void): () => void {
@@ -825,39 +803,15 @@ export function subscribeToAds(onEvent: () => void): () => void {
     }
   })();
 
-  const handleLocal = (e: any) => {
-    if (e?.detail?.type === "ads" || !e?.detail?.type) {
+  const unsubEngine = realtimeSync.subscribe((type) => {
+    if (type === "ads" || type === "all") {
       onEvent();
     }
-  };
-
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === LOCAL_ADS_KEY) {
-      onEvent();
-    }
-  };
-
-  let bc: BroadcastChannel | null = null;
-  if (typeof window !== "undefined") {
-    window.addEventListener("shop7_sync_event", handleLocal);
-    window.addEventListener("storage", handleStorage);
-    if ("BroadcastChannel" in window) {
-      bc = new BroadcastChannel("shop7_sync_bus");
-      bc.onmessage = (msg) => {
-        if (msg.data?.type === "ads") {
-          onEvent();
-        }
-      };
-    }
-  }
+  });
 
   return () => {
     unsubSupabase();
-    if (typeof window !== "undefined") {
-      window.removeEventListener("shop7_sync_event", handleLocal);
-      window.removeEventListener("storage", handleStorage);
-      if (bc) bc.close();
-    }
+    unsubEngine();
   };
 }
 
@@ -889,38 +843,14 @@ export function subscribeToProfiles(onEvent: () => void): () => void {
     }
   })();
 
-  const handleLocal = (e: any) => {
-    if (e?.detail?.type === "profiles" || !e?.detail?.type) {
+  const unsubEngine = realtimeSync.subscribe((type) => {
+    if (type === "profiles" || type === "all") {
       onEvent();
     }
-  };
-
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === LOCAL_PROFILES_KEY) {
-      onEvent();
-    }
-  };
-
-  let bc: BroadcastChannel | null = null;
-  if (typeof window !== "undefined") {
-    window.addEventListener("shop7_sync_event", handleLocal);
-    window.addEventListener("storage", handleStorage);
-    if ("BroadcastChannel" in window) {
-      bc = new BroadcastChannel("shop7_sync_bus");
-      bc.onmessage = (msg) => {
-        if (msg.data?.type === "profiles") {
-          onEvent();
-        }
-      };
-    }
-  }
+  });
 
   return () => {
     unsubSupabase();
-    if (typeof window !== "undefined") {
-      window.removeEventListener("shop7_sync_event", handleLocal);
-      window.removeEventListener("storage", handleStorage);
-      if (bc) bc.close();
-    }
+    unsubEngine();
   };
 }

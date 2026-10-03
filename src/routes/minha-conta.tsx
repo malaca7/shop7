@@ -80,7 +80,7 @@ const DEMO_ORDERS: UserOrder[] = [
 ];
 
 function MinhaContaPage() {
-  const { user, profile, role, signOut, updateProfile, switchRoleForDemo, isLoading } = useAuth();
+  const { user, profile, role, signOut, updateProfile, isLoading } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<"anuncios" | "pedidos" | "perfil">("anuncios");
@@ -378,28 +378,6 @@ function MinhaContaPage() {
               </div>
             )}
 
-            {/* Widget de Teste de Role (Demo / Dev) */}
-            <div className="mt-4 pt-3 border-t border-white/[0.05] flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Sparkles className="size-3 text-primary" /> Alternar papel para testes de permissão no SHOP7:
-              </span>
-              <div className="flex gap-1.5">
-                {(["user", "moderator", "admin"] as const).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => switchRoleForDemo(r)}
-                    className={`rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-all ${
-                      role === r
-                        ? "gradient-lime text-black"
-                        : "border border-white/[0.08] bg-[#14151a] text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {r === "user" ? "User" : r === "moderator" ? "Moderador" : "Admin"}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* 2. Navegação por Abas */}

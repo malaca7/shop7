@@ -10,7 +10,6 @@ interface AuthContextType {
   signInWithEmail: (email: string, password?: string) => Promise<void>;
   signUpWithEmail: (email: string, password?: string, fullName?: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  loginWithGoogleData: (data: GoogleUserData) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<Profile>) => Promise<void>;
   switchRoleForDemo: (newRole: UserRole) => void;
@@ -174,19 +173,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   .eq("id", session.user.id)
                   .single();
                 if (prof) {
-                  setProfile({
+                  const resolvedProfile = {
                     ...(prof as Profile),
                     role: isAdmin ? "admin" : (prof as Profile).role,
-                  });
+                  };
+                  setProfile(resolvedProfile);
+                  syncLocalProfile(resolvedProfile);
                 } else {
                   const meta = session.user.user_metadata as Record<string, any> | undefined;
-                  setProfile({
+                  const newProf = {
                     id: session.user.id,
                     email: session.user.email || "",
                     full_name: (meta?.["full_name"] || meta?.["name"] || (isAdmin ? "Rogério Malaquias Jr" : session.user.email?.split("@")[0])) || null,
                     avatar_url: (meta?.["avatar_url"] || meta?.["picture"]) || null,
                     role: isAdmin ? "admin" : "user",
-                  });
+                  };
+                  // Forçar inserção no banco caso a trigger não exista
+                  try {
+                    await supabase.from("profiles").upsert({ ...newProf, updated_at: new Date().toISOString() });
+                  } catch(e) {}
+                  
+                  setProfile(newProf as Profile);
+                  syncLocalProfile(newProf as Profile);
                 }
               } catch (profErr) {
                 console.warn("Erro ao buscar perfil em onAuthStateChange:", profErr);
@@ -207,49 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {};
   }, []);
 
-  // Helper para salvar dados vindos do Google
-  const loginWithGoogleData = async (googleData: GoogleUserData) => {
-    setIsLoading(true);
-    try {
-      const isAdmin = isUserAdminEmail(googleData.email);
-      const newUser = { id: `google-${googleData.id}`, email: googleData.email };
-      const newProfile: Profile = {
-        id: newUser.id,
-        email: googleData.email,
-        full_name: googleData.full_name || (isAdmin ? "Rogério Malaquias Jr" : googleData.email.split("@")[0]),
-        avatar_url: googleData.avatar_url,
-        role: isAdmin ? "admin" : "user",
-        created_at: new Date().toISOString(),
-      };
-
-      setUser(newUser);
-      setProfile(newProfile);
-      localStorage.setItem(
-        LOCAL_SESSION_KEY,
-        JSON.stringify({ user: newUser, profile: newProfile })
-      );
-
-      // Se o Supabase estiver configurado e operacional, sincroniza o perfil
-      if (isLiveSupabaseConfigured) {
-        try {
-          await supabase.from("profiles").upsert({
-            id: newUser.id,
-            email: googleData.email,
-            full_name: newProfile.full_name,
-            avatar_url: googleData.avatar_url,
-            role: isAdmin ? "admin" : "user",
-            updated_at: new Date().toISOString(),
-          });
-        } catch (e) {
-          console.warn("Supabase profiles upsert ignorado:", e);
-        }
-      } else {
-        syncLocalProfile(newProfile);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // (Helper loginWithGoogleData removido, pois usaremos o fluxo padrão do Supabase)
 
   // 1. Login com E-mail e Senha
   const signInWithEmail = async (email: string, password?: string) => {
@@ -366,35 +332,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 3. Login oficial com Google Identity Services (sem redirect_uri_mismatch)
+  // 3. Login oficial via OAuth do Supabase (para evitar problemas de popup e mismatches de domínio)
   const signInWithGoogle = async () => {
     setIsLoading(true);
     try {
-      const googleData = await promptGoogleOAuthPopup();
-      if (googleData) {
-        await loginWithGoogleData(googleData);
+      if (isLiveSupabaseConfigured) {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: window.location.origin,
+          },
+        });
+        if (error) throw error;
+      } else {
+        const googleUser = { id: "google-user-777", email: "google.user@gmail.com" };
+        const googleProfile: Profile = {
+          id: "google-user-777",
+          email: "google.user@gmail.com",
+          full_name: "Google Member",
+          avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+          role: "user",
+          created_at: new Date().toISOString(),
+        };
+        setUser(googleUser);
+        setProfile(googleProfile);
+        localStorage.setItem(
+          LOCAL_SESSION_KEY,
+          JSON.stringify({ user: googleUser, profile: googleProfile })
+        );
+        syncLocalProfile(googleProfile);
       }
     } catch (err: any) {
-      if (err.message === "POPUP_CLOSED") {
-        throw err;
-      }
-      console.warn("Tentando fallback de login Google:", err);
-      // Se não foi cancelamento do usuário, fallback para demo se offline
-      const googleUser = { id: "google-user-777", email: "google.user@gmail.com" };
-      const googleProfile: Profile = {
-        id: "google-user-777",
-        email: "google.user@gmail.com",
-        full_name: "Google Member",
-        avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-        role: "user",
-        created_at: new Date().toISOString(),
-      };
-      setUser(googleUser);
-      setProfile(googleProfile);
-      localStorage.setItem(
-        LOCAL_SESSION_KEY,
-        JSON.stringify({ user: googleUser, profile: googleProfile })
-      );
+      throw new Error(err.message || "Erro ao conectar com Google");
     } finally {
       setIsLoading(false);
     }
@@ -462,7 +431,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithEmail,
         signUpWithEmail,
         signInWithGoogle,
-        loginWithGoogleData,
         signOut,
         updateProfile,
         switchRoleForDemo,

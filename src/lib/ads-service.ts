@@ -416,20 +416,30 @@ export const AdsService = {
 
   // 9. Gestão de Usuários (Admin)
   async getAllProfiles(): Promise<Profile[]> {
+    const local = getLocalProfiles();
     if (isLiveSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
         if (error) {
-          console.warn("Supabase profiles indisponível ou tabela ainda não criada, usando fallback:", error.message);
-          return getLocalProfiles();
+          console.warn("Supabase profiles indisponível, usando fallback:", error.message);
+          return local;
         }
-        return data && data.length > 0 ? data : getLocalProfiles();
+        if (data) {
+          // Mesclar perfis do Supabase com os locais (Supabase tem prioridade)
+          const merged = [...data];
+          const dbIds = new Set(data.map(p => p.id));
+          for (const lp of local) {
+            if (!dbIds.has(lp.id)) {
+              merged.push(lp);
+            }
+          }
+          return merged;
+        }
       } catch (err) {
         console.warn("Supabase offline em getAllProfiles, usando fallback:", err);
-        return getLocalProfiles();
       }
     }
-    return getLocalProfiles();
+    return local;
   },
 
   // 10. Alterar Role do Usuário (Admin)

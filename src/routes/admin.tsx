@@ -47,9 +47,12 @@ import { UserModal } from "@/components/admin/UserModal";
 import { PermissionsMatrixModal } from "@/components/admin/PermissionsMatrixModal";
 import {
   ROLE_DETAILS,
-  PERMISSIONS_MATRIX_FEATURES,
+  getPermissionsMatrixFeatures,
+  savePermissionsMatrixFeatures,
   getRoleBadgeInfo,
+  type PermissionFeature,
 } from "@/lib/permissions";
+import { PermissionEditModal } from "@/components/admin/PermissionEditModal";
 import { AdsService } from "@/lib/ads-service";
 import type { Ad, Profile, UserRole, AdType, AdStatus } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
@@ -86,6 +89,11 @@ function AdminPage() {
   const [selectedRoleCard, setSelectedRoleCard] = useState<UserRole>("admin");
   const [permSearch, setPermSearch] = useState("");
   const [permCategory, setPermCategory] = useState<string>("todos");
+  
+  // Gestão de Permissões
+  const [matrixFeatures, setMatrixFeatures] = useState<PermissionFeature[]>([]);
+  const [isPermEditModalOpen, setIsPermEditModalOpen] = useState(false);
+  const [editingPermFeature, setEditingPermFeature] = useState<PermissionFeature | null>(null);
 
   // Notificações de Ação
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -131,9 +139,29 @@ function AdminPage() {
 
   useEffect(() => {
     if (role === "admin") {
+      setMatrixFeatures(getPermissionsMatrixFeatures());
       loadData();
     }
   }, [role, activeTab]);
+
+  const handleSavePermission = (feature: PermissionFeature) => {
+    const isExisting = matrixFeatures.some(f => f.id === feature.id);
+    const updated = isExisting
+      ? matrixFeatures.map(f => f.id === feature.id ? feature : f)
+      : [...matrixFeatures, feature];
+    
+    setMatrixFeatures(updated);
+    savePermissionsMatrixFeatures(updated);
+    showFeedback(`Permissão "${feature.name}" salva com sucesso!`);
+  };
+
+  const handleDeletePermission = (id: string) => {
+    if (!confirm("Tem certeza que deseja excluir esta permissão?")) return;
+    const updated = matrixFeatures.filter(f => f.id !== id);
+    setMatrixFeatures(updated);
+    savePermissionsMatrixFeatures(updated);
+    showFeedback("Permissão removida com sucesso!");
+  };
 
   // Mensagem temporária
   const showFeedback = (msg: string, isError = false) => {
@@ -1269,11 +1297,22 @@ function AdminPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => {
+                      setEditingPermFeature(null);
+                      setIsPermEditModalOpen(true);
+                    }}
+                    className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 active:scale-95 transition-all"
+                  >
+                    <Plus className="size-3.5 stroke-[2.5]" />
+                    <span>Nova Permissão</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setIsPermissionsModalOpen(true)}
                     className="flex items-center gap-1.5 rounded-xl border border-white/[0.1] bg-[#14151b] px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/50 hover:text-primary transition-all"
                   >
                     <Layers className="size-3.5" />
-                    <span>Abrir Janela Modal</span>
+                    <span>Abrir Matriz Modal</span>
                   </button>
                   <button
                     type="button"
@@ -1281,9 +1320,9 @@ function AdminPage() {
                       setEditingProfile(null);
                       setIsUserModalOpen(true);
                     }}
-                    className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 active:scale-95 transition-all"
+                    className="flex items-center gap-1.5 rounded-xl border border-white/[0.1] bg-[#14151b] px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/50 hover:text-primary transition-all"
                   >
-                    <UserPlus className="size-3.5 stroke-[2.5]" />
+                    <UserPlus className="size-3.5" />
                     <span>Gerenciar Membro</span>
                   </button>
                 </div>
@@ -1459,55 +1498,9 @@ function AdminPage() {
                             <span>Admin</span>
                           </div>
                         </th>
+                        <th className="py-3.5 px-3 font-semibold text-center w-20">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/[0.04]">
-                      {PERMISSIONS_MATRIX_FEATURES.filter((feat) => {
-                        const matchesSearch =
-                          feat.name.toLowerCase().includes(permSearch.toLowerCase()) ||
-                          feat.description.toLowerCase().includes(permSearch.toLowerCase());
-                        const matchesCat = permCategory === "todos" || feat.category === permCategory;
-                        return matchesSearch && matchesCat;
-                      }).map((feat) => (
-                        <tr key={feat.id} className="hover:bg-white/[0.02] transition-colors">
-                          <td className="py-3 pl-4 pr-3">
-                            <div className="font-semibold text-white flex items-center gap-2">
-                              <span>{feat.name}</span>
-                              <span className="rounded bg-white/[0.05] px-1.5 py-0.2 text-[9px] font-medium text-muted-foreground">
-                                {feat.category}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground/80 mt-0.5 leading-relaxed">
-                              {feat.description}
-                            </p>
-                          </td>
-
-                          {/* Membro */}
-                          <td className="py-3 px-3 text-center align-middle">
-                            {feat.user ? (
-                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-500/15 text-emerald-400">
-                                <CheckCircle2 className="size-4" />
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-red-500/10 text-red-400/60">
-                                <XCircle className="size-4" />
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Moderador */}
-                          <td className="py-3 px-3 text-center align-middle">
-                            {feat.moderator ? (
-                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-500/15 text-emerald-400">
-                                <CheckCircle2 className="size-4" />
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-red-500/10 text-red-400/60">
-                                <XCircle className="size-4" />
-                              </span>
-                            )}
-                          </td>
-
                           {/* Admin */}
                           <td className="py-3 px-3 text-center align-middle">
                             {feat.admin ? (
@@ -1519,6 +1512,29 @@ function AdminPage() {
                                 <XCircle className="size-4" />
                               </span>
                             )}
+                          </td>
+                          
+                          {/* Ações */}
+                          <td className="py-3 px-3 text-center align-middle">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPermFeature(feat);
+                                  setIsPermEditModalOpen(true);
+                                }}
+                                className="grid size-7 place-items-center rounded bg-white/[0.04] hover:bg-white/[0.08] text-muted-foreground hover:text-primary transition-colors"
+                              >
+                                <Edit className="size-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePermission(feat.id)}
+                                className="grid size-7 place-items-center rounded bg-white/[0.04] hover:bg-white/[0.08] text-muted-foreground hover:text-red-400 transition-colors"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1666,6 +1682,14 @@ function AdminPage() {
           defaultRoleView="admin"
         />
       )}
+
+      {/* Modal de Edição de Permissões (CRUD) */}
+      <PermissionEditModal
+        isOpen={isPermEditModalOpen}
+        onClose={() => setIsPermEditModalOpen(false)}
+        onSave={handleSavePermission}
+        editingFeature={editingPermFeature}
+      />
     </div>
   );
 }

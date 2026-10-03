@@ -15,7 +15,7 @@ import {
   Unlock,
 } from "lucide-react";
 import {
-  PERMISSIONS_MATRIX_FEATURES,
+  getPermissionsMatrixFeatures,
   ROLE_DETAILS,
   type PermissionFeature,
 } from "@/lib/permissions";
@@ -41,7 +41,7 @@ export function PermissionsMatrixModal({
 
   const categories = ["todos", "Anúncios", "Moderação", "Usuários & Contas", "Painéis & Sistema"];
 
-  const filteredFeatures = PERMISSIONS_MATRIX_FEATURES.filter((f) => {
+  const filteredFeatures = getPermissionsMatrixFeatures().filter((f) => {
     const matchesSearch =
       f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       f.description.toLowerCase().includes(searchQuery.toLowerCase());

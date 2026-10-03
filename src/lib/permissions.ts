@@ -34,7 +34,7 @@ export interface PermissionFeature {
   admin: boolean;
 }
 
-export const PERMISSIONS_MATRIX_FEATURES: PermissionFeature[] = [
+const DEFAULT_PERMISSIONS_MATRIX_FEATURES: PermissionFeature[] = [
   // Anúncios
   {
     id: "ads_browse_buy",
@@ -205,6 +205,24 @@ export const PERMISSIONS_MATRIX_FEATURES: PermissionFeature[] = [
     admin: true,
   },
 ];
+
+export function getPermissionsMatrixFeatures(): PermissionFeature[] {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("shop7_permissions_matrix_v1");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+  }
+  return DEFAULT_PERMISSIONS_MATRIX_FEATURES;
+}
+
+export function savePermissionsMatrixFeatures(features: PermissionFeature[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("shop7_permissions_matrix_v1", JSON.stringify(features));
+  }
+}
 
 export interface RoleInfo {
   role: UserRole;

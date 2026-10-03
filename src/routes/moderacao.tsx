@@ -42,13 +42,15 @@ import { RejectModal } from "@/components/ads/RejectModal";
 import { AdDetailModal } from "@/components/ads/AdDetailModal";
 import { CreateAdModal } from "@/components/ads/CreateAdModal";
 import { UserModal } from "@/components/admin/UserModal";
+import { PermissionsMatrixModal } from "@/components/admin/PermissionsMatrixModal";
+import { ROLE_DETAILS } from "@/lib/permissions";
 import { AdsService } from "@/lib/ads-service";
 import type { Ad, Profile, UserRole, AdType, AdStatus } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
 
 export const Route = createFileRoute("/moderacao")({
   head: () => ({
-    meta: [{ title: "Painel de Moderação & Gestão Administrativa — SHOP7" }],
+    meta: [{ title: "Painel de Moderação & Gestão de Anúncios — SHOP7" }],
   }),
   component: ModeracaoPage,
 });
@@ -69,9 +71,10 @@ function ModeracaoPage() {
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [editingAd, setEditingAd] = useState<Ad | null>(null);
 
-  // Modais de Usuários
+  // Modais de Usuários & Permissões
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
 
   // Notificações de Ação
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -428,7 +431,7 @@ function ModeracaoPage() {
               </div>
             </div>
 
-            {/* Ações de Topo: Criar Anúncio Direto & Adicionar Usuário */}
+            {/* Ações de Topo: Criar Anúncio Direto, Regras & Atalho Admin */}
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -441,6 +444,25 @@ function ModeracaoPage() {
                 <Plus className="size-4 stroke-[2.5]" />
                 <span>+ Novo Anúncio</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setIsPermissionsModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all"
+              >
+                <ShieldCheck className="size-4" />
+                <span>Regras de Moderação</span>
+              </button>
+
+              {role === "admin" && (
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 px-3.5 py-2 text-xs font-semibold text-purple-300 hover:bg-purple-500/20 transition-all"
+                >
+                  <Crown className="size-4 text-purple-400" />
+                  <span>Painel Admin 👑</span>
+                </Link>
+              )}
 
               <button
                 type="button"
@@ -459,6 +481,31 @@ function ModeracaoPage() {
                 <span>Voltar à Conta</span>
               </Link>
             </div>
+          </div>
+
+          {/* Banner de Escopo & Restrições de Moderação */}
+          <div className="mt-4 rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/[0.06] via-primary/[0.02] to-transparent p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <div className="grid size-9 place-items-center rounded-xl bg-primary/20 text-primary shrink-0">
+                <ShieldCheck className="size-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">
+                  Escopo Autorizado: Avaliação e Triagem de Anúncios na Fila
+                </p>
+                <p className="text-muted-foreground text-[11px] mt-0.5">
+                  Como Moderador, você pode inspecionar, aprovar e rejeitar anúncios com motivos formais. A gestão de contas de usuários e parâmetros financeiros é restrita ao Administrador Geral.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPermissionsModalOpen(true)}
+              className="text-primary hover:underline font-bold text-[11px] shrink-0 self-start sm:self-auto flex items-center gap-1"
+            >
+              <Info className="size-3.5" />
+              <span>Ver Matriz Completa</span>
+            </button>
           </div>
 
           {/* Notificação de Feedback */}
@@ -1239,6 +1286,15 @@ function ModeracaoPage() {
         }}
         initialProfile={editingProfile}
       />
+
+      {/* Modal de Regras de Moderação & Permissões */}
+      {isPermissionsModalOpen && (
+        <PermissionsMatrixModal
+          isOpen={isPermissionsModalOpen}
+          onClose={() => setIsPermissionsModalOpen(false)}
+          defaultRoleView="moderator"
+        />
+      )}
     </div>
   );
 }

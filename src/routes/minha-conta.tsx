@@ -25,12 +25,15 @@ import {
   FileText,
   BadgeCheck,
   Search,
+  Info,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { CreateAdModal } from "@/components/ads/CreateAdModal";
+import { PermissionsMatrixModal } from "@/components/admin/PermissionsMatrixModal";
+import { ROLE_DETAILS } from "@/lib/permissions";
 import { AdsService } from "@/lib/ads-service";
 import type { Ad, UserRole } from "@/lib/supabase";
 import { formatBRL } from "@/data/catalog";
@@ -94,6 +97,7 @@ function MinhaContaPage() {
   const [editAvatar, setEditAvatar] = useState(profile?.avatar_url || "");
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
 
   // Redireciona para /auth caso não esteja logado
   useEffect(() => {
@@ -236,24 +240,30 @@ function MinhaContaPage() {
                     <h1 className="text-xl sm:text-2xl font-bold text-foreground">
                       {profile?.full_name || "Usuário SHOP7"}
                     </h1>
-                    {/* Badge de Role */}
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                    {/* Badge de Role com Botão de Permissões */}
+                    <button
+                      type="button"
+                      onClick={() => setIsPermissionsModalOpen(true)}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all hover:scale-105 active:scale-95 ${
                         role === "admin"
-                          ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                          ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30"
                           : role === "moderator"
-                          ? "bg-primary/20 text-primary border border-primary/30"
-                          : "bg-white/[0.06] text-muted-foreground border border-white/[0.08]"
+                          ? "bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30"
+                          : "bg-white/[0.06] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.12]"
                       }`}
+                      title="Clique para ver o escopo e restrições do seu cargo"
                     >
                       {role === "admin" && <Crown className="size-3" />}
                       {role === "moderator" && <Shield className="size-3" />}
-                      {role === "admin"
-                        ? "Administrador"
-                        : role === "moderator"
-                        ? "Moderador"
-                        : "Membro"}
-                    </span>
+                      <span>
+                        {role === "admin"
+                          ? "Administrador"
+                          : role === "moderator"
+                          ? "Moderador"
+                          : "Membro"}
+                      </span>
+                      <Info className="size-2.5 opacity-70" />
+                    </button>
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
                       <BadgeCheck className="size-3" /> Conta Verificada
                     </span>
@@ -762,7 +772,17 @@ function MinhaContaPage() {
 
                 {/* Nível de Acesso */}
                 <div>
-                  <label className="text-xs font-semibold text-foreground">Nível de Permissão na Plataforma</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">Nível de Permissão na Plataforma</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsPermissionsModalOpen(true)}
+                      className="text-[11px] text-primary hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      <Info className="size-3" />
+                      <span>Ver Regras & Restrições do Cargo</span>
+                    </button>
+                  </div>
                   <div className="mt-1.5">
                     <span className="rounded-xl border border-white/[0.08] bg-[#14151a] px-3.5 py-2 text-xs font-bold text-primary inline-flex items-center gap-1.5">
                       {role === "admin" ? <Crown className="size-4 text-purple-400" /> : role === "moderator" ? <ShieldCheck className="size-4 text-primary" /> : <User className="size-4" />}
@@ -802,6 +822,15 @@ function MinhaContaPage() {
         initialAd={editingAd}
         isAdminMode={false}
       />
+
+      {/* Modal de Regras & Permissões do Usuário */}
+      {isPermissionsModalOpen && (
+        <PermissionsMatrixModal
+          isOpen={isPermissionsModalOpen}
+          onClose={() => setIsPermissionsModalOpen(false)}
+          defaultRoleView={role}
+        />
+      )}
     </div>
   );
 }

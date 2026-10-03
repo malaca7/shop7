@@ -107,18 +107,33 @@ export function Header({ onSearch, onOpenCreateAd }: HeaderProps) {
                 )}
 
                 {role === "admin" && (
-                  <Link
-                    to="/admin"
-                    className="mt-3 flex items-center justify-between rounded-xl border border-purple-500/30 bg-purple-500/10 p-3 text-xs font-semibold text-purple-400"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Crown className="size-4" />
-                      <span>Central Administrativa</span>
-                    </div>
-                    <span className="rounded-full bg-purple-500 text-black px-1.5 py-0.2 text-[10px] font-bold">
-                      Acessar
-                    </span>
-                  </Link>
+                  <div className="mt-3 flex flex-col gap-2">
+                    <Link
+                      to="/admin"
+                      className="flex items-center justify-between rounded-xl border border-purple-500/30 bg-purple-500/10 p-3 text-xs font-semibold text-purple-300"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Crown className="size-4 text-purple-400" />
+                        <span>Central Administrativa</span>
+                      </div>
+                      <span className="rounded-full bg-purple-500 text-black px-1.5 py-0.2 text-[10px] font-bold">
+                        Admin
+                      </span>
+                    </Link>
+
+                    <Link
+                      to="/moderacao"
+                      className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/10 p-2.5 text-xs font-semibold text-primary"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="size-4" />
+                        <span>Central de Moderação</span>
+                      </div>
+                      <span className="rounded-full bg-primary text-black px-1.5 py-0.2 text-[10px] font-bold">
+                        Fila
+                      </span>
+                    </Link>
+                  </div>
                 )}
 
                 {role === "moderator" && (
@@ -265,12 +280,21 @@ export function Header({ onSearch, onOpenCreateAd }: HeaderProps) {
                 </DropdownMenuItem>
 
                 {role === "admin" && (
-                  <DropdownMenuItem asChild className="rounded-xl cursor-pointer text-purple-400 focus:text-purple-400">
-                    <Link to="/admin" className="flex items-center gap-2">
-                      <Crown className="size-4" />
-                      <span>Central Administrativa</span>
-                    </Link>
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer text-purple-400 focus:text-purple-400">
+                      <Link to="/admin" className="flex items-center gap-2">
+                        <Crown className="size-4" />
+                        <span>Central Administrativa</span>
+                      </Link>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer text-primary focus:text-primary">
+                      <Link to="/moderacao" className="flex items-center gap-2">
+                        <ShieldCheck className="size-4" />
+                        <span>Central de Moderação</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
                 )}
 
                 {role === "moderator" && (

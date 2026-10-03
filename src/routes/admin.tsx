@@ -34,6 +34,8 @@ import {
   BadgeCheck,
   RefreshCw,
   SlidersHorizontal,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
@@ -42,6 +44,12 @@ import { RejectModal } from "@/components/ads/RejectModal";
 import { AdDetailModal } from "@/components/ads/AdDetailModal";
 import { CreateAdModal } from "@/components/ads/CreateAdModal";
 import { UserModal } from "@/components/admin/UserModal";
+import { PermissionsMatrixModal } from "@/components/admin/PermissionsMatrixModal";
+import {
+  ROLE_DETAILS,
+  PERMISSIONS_MATRIX_FEATURES,
+  getRoleBadgeInfo,
+} from "@/lib/permissions";
 import { AdsService } from "@/lib/ads-service";
 import type { Ad, Profile, UserRole, AdType, AdStatus } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
@@ -57,7 +65,9 @@ function AdminPage() {
   const { user, role, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<"pendentes" | "todos-anuncios" | "usuarios" | "historico" | "metricas">("pendentes");
+  const [activeTab, setActiveTab] = useState<
+    "pendentes" | "todos-anuncios" | "usuarios" | "permissoes" | "historico" | "metricas"
+  >("pendentes");
   const [pendingAds, setPendingAds] = useState<Ad[]>([]);
   const [allAds, setAllAds] = useState<Ad[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -69,9 +79,13 @@ function AdminPage() {
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [editingAd, setEditingAd] = useState<Ad | null>(null);
 
-  // Modais de Usuários
+  // Modais de Usuários & Permissões
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  const [selectedRoleCard, setSelectedRoleCard] = useState<UserRole>("admin");
+  const [permSearch, setPermSearch] = useState("");
+  const [permCategory, setPermCategory] = useState<string>("todos");
 
   // Notificações de Ação
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -432,7 +446,7 @@ function AdminPage() {
               </div>
             </div>
 
-            {/* Ações de Topo: Criar Anúncio Direto & Adicionar Usuário */}
+            {/* Ações de Topo: Criar Anúncio Direto, Adicionar Usuário & Matriz de Permissões */}
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -456,6 +470,15 @@ function AdminPage() {
               >
                 <UserPlus className="size-4" />
                 <span>+ Novo Usuário</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsPermissionsModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all"
+              >
+                <ShieldCheck className="size-4" />
+                <span>Guia de Permissões</span>
               </button>
 
               <button
@@ -594,6 +617,7 @@ function AdminPage() {
               { id: "pendentes", label: "Fila de Moderação", count: stats.pending, icon: Clock, badgeColor: "bg-yellow-500/20 text-yellow-400" },
               { id: "todos-anuncios", label: "Todos os Anúncios", count: stats.total, icon: Package, badgeColor: "bg-white/[0.08] text-muted-foreground" },
               { id: "usuarios", label: "Gestão de Usuários", count: stats.usersCount, icon: Users, badgeColor: "bg-purple-500/20 text-purple-300" },
+              { id: "permissoes", label: "Permissões & Cargos", icon: ShieldCheck, badgeColor: "bg-primary/20 text-primary" },
               { id: "historico", label: "Histórico de Decisões", count: historyAds.length, icon: Calendar, badgeColor: "bg-white/[0.08] text-muted-foreground" },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -1037,17 +1061,28 @@ function AdminPage() {
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingProfile(null);
-                    setIsUserModalOpen(true);
-                  }}
-                  className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shrink-0 self-start sm:self-auto shadow-md hover:brightness-110 active:scale-95 transition-all"
-                >
-                  <UserPlus className="size-3.5 stroke-[2.5]" />
-                  <span>Cadastrar Usuário</span>
-                </button>
+                <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("permissoes")}
+                    className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all"
+                  >
+                    <ShieldCheck className="size-3.5" />
+                    <span>Regras & Cargos</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingProfile(null);
+                      setIsUserModalOpen(true);
+                    }}
+                    className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 active:scale-95 transition-all"
+                  >
+                    <UserPlus className="size-3.5 stroke-[2.5]" />
+                    <span>Cadastrar Usuário</span>
+                  </button>
+                </div>
               </div>
 
               {/* Tabela de Usuários */}
@@ -1206,6 +1241,295 @@ function AdminPage() {
           )}
 
           {/* ========================================================================= */}
+          {/* ABA: MATRIZ DE PERMISSÕES & CARGOS (ADMIN SUPREMO) */}
+          {/* ========================================================================= */}
+          {activeTab === "permissoes" && (
+            <div className="mt-6 space-y-6 animate-in fade-in duration-200">
+              {/* Header da Seção */}
+              <div className="rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="grid size-12 place-items-center rounded-2xl border border-primary/30 bg-primary/10 text-primary">
+                    <ShieldCheck className="size-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary">
+                        Controle de Acesso Baseado em Cargos (RBAC / ACL)
+                      </span>
+                    </div>
+                    <h2 className="text-lg sm:text-xl font-bold text-foreground">
+                      Regras, Permissões e Restrições Oficiais do SHOP7
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Entenda e audite o que cada cargo (Membro, Moderador, Administrador) tem permissão de executar na plataforma.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPermissionsModalOpen(true)}
+                    className="flex items-center gap-1.5 rounded-xl border border-white/[0.1] bg-[#14151b] px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/50 hover:text-primary transition-all"
+                  >
+                    <Layers className="size-3.5" />
+                    <span>Abrir Janela Modal</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingProfile(null);
+                      setIsUserModalOpen(true);
+                    }}
+                    className="gradient-lime flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-black shadow-md hover:brightness-110 active:scale-95 transition-all"
+                  >
+                    <UserPlus className="size-3.5 stroke-[2.5]" />
+                    <span>Gerenciar Membro</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Seletor Rápido de Papéis */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {(["user", "moderator", "admin"] as UserRole[]).map((r) => {
+                  const info = ROLE_DETAILS[r];
+                  const isSelected = selectedRoleCard === r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setSelectedRoleCard(r)}
+                      className={`flex flex-col rounded-3xl border p-5 text-left transition-all relative overflow-hidden ${
+                        isSelected
+                          ? r === "admin"
+                            ? "border-purple-500 bg-purple-500/[0.08] shadow-[0_0_24px_-4px_rgba(168,85,247,0.3)] ring-1 ring-purple-500/40"
+                            : r === "moderator"
+                            ? "border-primary bg-primary/[0.08] shadow-[0_0_24px_-4px_rgba(132,204,22,0.3)] ring-1 ring-primary/40"
+                            : "border-white/40 bg-white/[0.05] ring-1 ring-white/20"
+                          : "border-white/[0.06] bg-[#0c0d10] text-muted-foreground hover:border-white/20 hover:bg-[#101217]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className={`grid size-10 place-items-center rounded-2xl ${
+                          r === "admin"
+                            ? "bg-purple-500/20 text-purple-300"
+                            : r === "moderator"
+                            ? "bg-primary/20 text-primary"
+                            : "bg-white/10 text-white"
+                        }`}>
+                          {r === "admin" ? <Crown className="size-5" /> : r === "moderator" ? <ShieldCheck className="size-5" /> : <User className="size-5" />}
+                        </div>
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${info.badgeBg} ${info.badgeColor} ${info.badgeBorder}`}>
+                          {info.badgeLabel}
+                        </span>
+                      </div>
+
+                      <h3 className="mt-3 text-sm font-bold text-foreground">
+                        {info.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                        {info.summary}
+                      </p>
+
+                      <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px]">
+                        <span className="text-emerald-400 font-semibold">{info.permissions.length} permissões</span>
+                        <span className="text-red-400/80 font-semibold">{info.restrictions.length} restrições</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Detalhamento do Cargo Selecionado */}
+              {(() => {
+                const info = ROLE_DETAILS[selectedRoleCard];
+                return (
+                  <div className="rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-6 space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.06] pb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${info.badgeBg} ${info.badgeColor} ${info.badgeBorder} border`}>
+                            {selectedRoleCard === "admin" ? <Crown className="size-3.5" /> : selectedRoleCard === "moderator" ? <ShieldCheck className="size-3.5" /> : <User className="size-3.5" />}
+                            {info.badgeLabel}
+                          </span>
+                        </div>
+                        <h3 className="text-lg font-bold text-foreground mt-2">
+                          Escopo de Autoridade: {info.title}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1 max-w-3xl leading-relaxed">
+                          {info.fullDescription}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Permissões Liberadas */}
+                      <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.03] p-5 space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
+                          <Unlock className="size-4" />
+                          <span>O Que Este Cargo PODE Fazer ({info.permissions.length})</span>
+                        </div>
+                        <ul className="space-y-2.5 text-xs">
+                          {info.permissions.map((p, idx) => (
+                            <li key={idx} className="flex items-start gap-2.5 text-zinc-300">
+                              <CheckCircle2 className="size-4 text-emerald-400 shrink-0 mt-0.5" />
+                              <span className="leading-snug">{p}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Restrições & Bloqueios */}
+                      <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.03] p-5 space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-bold text-red-400">
+                          <Lock className="size-4" />
+                          <span>O Que Este Cargo NÃO PODE Fazer ({info.restrictions.length})</span>
+                        </div>
+                        <ul className="space-y-2.5 text-xs">
+                          {info.restrictions.map((r, idx) => (
+                            <li key={idx} className="flex items-start gap-2.5 text-zinc-300">
+                              <XCircle className="size-4 text-red-400/80 shrink-0 mt-0.5" />
+                              <span className="leading-snug">{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Tabela Geral Comparativa */}
+              <div className="rounded-3xl border border-white/[0.08] bg-[#0c0d10] p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">
+                      Tabela Comparativa de Capacidades por Módulo
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Consulte lado a lado o status de cada permissão individual para os 3 níveis de usuário.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Filtrar recurso..."
+                        value={permSearch}
+                        onChange={(e) => setPermSearch(e.target.value)}
+                        className="h-9 w-48 rounded-xl border border-white/[0.08] bg-[#121317] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
+                      />
+                    </div>
+                    <select
+                      value={permCategory}
+                      onChange={(e) => setPermCategory(e.target.value)}
+                      className="h-9 rounded-xl border border-white/[0.08] bg-[#121317] px-3 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+                    >
+                      <option value="todos">Todas Categorias</option>
+                      <option value="Anúncios">Anúncios</option>
+                      <option value="Moderação">Moderação</option>
+                      <option value="Usuários & Contas">Usuários & Contas</option>
+                      <option value="Painéis & Sistema">Painéis & Sistema</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0f1116]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] bg-[#151820] text-muted-foreground">
+                        <th className="py-3.5 pl-4 pr-2 font-semibold">Recurso / Capacidade</th>
+                        <th className="py-3.5 px-3 font-semibold text-center w-28">
+                          <div className="flex items-center justify-center gap-1 text-zinc-300 font-bold">
+                            <User className="size-3.5" />
+                            <span>Membro</span>
+                          </div>
+                        </th>
+                        <th className="py-3.5 px-3 font-semibold text-center w-28">
+                          <div className="flex items-center justify-center gap-1 text-primary font-bold">
+                            <ShieldCheck className="size-3.5" />
+                            <span>Moderador</span>
+                          </div>
+                        </th>
+                        <th className="py-3.5 px-3 font-semibold text-center w-28">
+                          <div className="flex items-center justify-center gap-1 text-purple-400 font-bold">
+                            <Crown className="size-3.5" />
+                            <span>Admin</span>
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.04]">
+                      {PERMISSIONS_MATRIX_FEATURES.filter((feat) => {
+                        const matchesSearch =
+                          feat.name.toLowerCase().includes(permSearch.toLowerCase()) ||
+                          feat.description.toLowerCase().includes(permSearch.toLowerCase());
+                        const matchesCat = permCategory === "todos" || feat.category === permCategory;
+                        return matchesSearch && matchesCat;
+                      }).map((feat) => (
+                        <tr key={feat.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="py-3 pl-4 pr-3">
+                            <div className="font-semibold text-white flex items-center gap-2">
+                              <span>{feat.name}</span>
+                              <span className="rounded bg-white/[0.05] px-1.5 py-0.2 text-[9px] font-medium text-muted-foreground">
+                                {feat.category}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground/80 mt-0.5 leading-relaxed">
+                              {feat.description}
+                            </p>
+                          </td>
+
+                          {/* Membro */}
+                          <td className="py-3 px-3 text-center align-middle">
+                            {feat.user ? (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-500/15 text-emerald-400">
+                                <CheckCircle2 className="size-4" />
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-red-500/10 text-red-400/60">
+                                <XCircle className="size-4" />
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Moderador */}
+                          <td className="py-3 px-3 text-center align-middle">
+                            {feat.moderator ? (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-500/15 text-emerald-400">
+                                <CheckCircle2 className="size-4" />
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-red-500/10 text-red-400/60">
+                                <XCircle className="size-4" />
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Admin */}
+                          <td className="py-3 px-3 text-center align-middle">
+                            {feat.admin ? (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-500/15 text-emerald-400">
+                                <CheckCircle2 className="size-4" />
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center justify-center size-6 rounded-full bg-red-500/10 text-red-400/60">
+                                <XCircle className="size-4" />
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
           {/* ABA 4: HISTÓRICO DE DECISÕES */}
           {/* ========================================================================= */}
           {activeTab === "historico" && (
@@ -1333,6 +1657,15 @@ function AdminPage() {
         }}
         initialProfile={editingProfile}
       />
+
+      {/* Modal de Matriz Oficial de Permissões & Restrições */}
+      {isPermissionsModalOpen && (
+        <PermissionsMatrixModal
+          isOpen={isPermissionsModalOpen}
+          onClose={() => setIsPermissionsModalOpen(false)}
+          defaultRoleView="admin"
+        />
+      )}
     </div>
   );
 }

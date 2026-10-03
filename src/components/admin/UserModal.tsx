@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { X, User, Mail, Shield, Crown, Sparkles, Image, Check } from "lucide-react";
+import { X, User, Mail, Shield, Crown, Sparkles, Image, Check, Info } from "lucide-react";
 import { AdsService } from "@/lib/ads-service";
+import { PermissionsMatrixModal } from "./PermissionsMatrixModal";
 import type { Profile, UserRole } from "@/lib/supabase";
 
 interface UserModalProps {
@@ -30,6 +31,7 @@ export function UserModal({
   const [avatarUrl, setAvatarUrl] = useState(initialProfile?.avatar_url || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showMatrixModal, setShowMatrixModal] = useState(false);
 
   useEffect(() => {
     if (initialProfile) {
@@ -170,10 +172,21 @@ export function UserModal({
 
           {/* Papel / Nível de Acesso */}
           <div>
-            <label className="text-xs font-semibold text-foreground">Papel & Permissões no Sistema</label>
-            <div className="mt-1.5 grid grid-cols-3 gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-foreground">Papel & Nível de Acesso no Sistema</label>
+              <button
+                type="button"
+                onClick={() => setShowMatrixModal(true)}
+                className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium"
+              >
+                <Info className="size-3" />
+                <span>Ver Matriz de Permissões</span>
+              </button>
+            </div>
+            
+            <div className="mt-2 grid grid-cols-3 gap-2">
               {[
-                { id: "user" as UserRole, label: "Membro (User)", desc: "Comprar & Vender", icon: User, color: "hover:border-white/20" },
+                { id: "user" as UserRole, label: "Membro", desc: "Comprar & Vender", icon: User, color: "hover:border-white/20" },
                 { id: "moderator" as UserRole, label: "Moderador", desc: "Aprovar anúncios", icon: Shield, color: "hover:border-primary/50" },
                 { id: "admin" as UserRole, label: "Admin", desc: "Controle total", icon: Crown, color: "hover:border-purple-500/50" },
               ].map((r) => {
@@ -200,6 +213,41 @@ export function UserModal({
                   </button>
                 );
               })}
+            </div>
+
+            {/* Resumo dinâmico de escopo de permissões */}
+            <div className={`mt-2.5 rounded-xl border p-2.5 text-[11px] leading-relaxed ${
+              role === "admin"
+                ? "border-purple-500/30 bg-purple-500/10 text-purple-200"
+                : role === "moderator"
+                ? "border-primary/30 bg-primary/10 text-primary-200"
+                : "border-white/[0.08] bg-white/[0.03] text-muted-foreground"
+            }`}>
+              <div className="font-semibold flex items-center gap-1.5 mb-1 text-white">
+                {role === "admin" ? (
+                  <>
+                    <Crown className="size-3.5 text-purple-400" />
+                    <span className="text-purple-400">Poderes Totais de Administrador:</span>
+                  </>
+                ) : role === "moderator" ? (
+                  <>
+                    <Shield className="size-3.5 text-primary" />
+                    <span className="text-primary">Escopo de Moderação:</span>
+                  </>
+                ) : (
+                  <>
+                    <User className="size-3.5 text-zinc-300" />
+                    <span className="text-zinc-300">Acesso Padrão de Membro:</span>
+                  </>
+                )}
+              </div>
+              <p className="text-[11px] opacity-90">
+                {role === "admin"
+                  ? "Acesso ilimitado a /admin e /moderacao, edição e exclusão de qualquer usuário e anúncio, controle de métricas e cargos."
+                  : role === "moderator"
+                  ? "Acesso exclusivo à Central de Moderação (/moderacao) para aprovar e rejeitar novos anúncios com motivo formal. Sem acesso ao /admin."
+                  : "Pode comprar produtos e criar anúncios próprios que passam por aprovação prévia. Sem acesso às centrais de moderação ou admin."}
+              </p>
             </div>
           </div>
 
@@ -283,6 +331,14 @@ export function UserModal({
           </div>
         </form>
       </div>
+
+      {showMatrixModal && (
+        <PermissionsMatrixModal
+          isOpen={showMatrixModal}
+          onClose={() => setShowMatrixModal(false)}
+          defaultRoleView={role}
+        />
+      )}
     </div>
   );
 }

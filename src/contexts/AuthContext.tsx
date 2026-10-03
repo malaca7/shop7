@@ -22,6 +22,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function toValidUuid(idOrSeed?: string | null): string {
   if (!idOrSeed) return generateValidUuid();
+  const normalized = idOrSeed.trim().toLowerCase();
+  if (normalized === "malacarogeriojr@gmail.com" || normalized === "00000000-0000-4000-8000-000000000001") {
+    return "00000000-0000-4000-8000-000000000001";
+  }
+  if (normalized === "rogeriomalaquiasjr@gmail.com" || normalized === "00000000-0000-4000-8000-000000000002") {
+    return "00000000-0000-4000-8000-000000000002";
+  }
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (uuidRegex.test(idOrSeed)) {
     return idOrSeed;

@@ -1,6 +1,6 @@
 import { supabase, isLiveSupabaseConfigured, type Ad, type AdStatus, type Profile, type UserRole } from "./supabase";
 import { generateValidUuid } from "./utils";
-import { realtimeSync, ROOT_ADMINS_DEFAULT } from "./realtime-sync";
+import { realtimeSync, ROOT_ADMINS_DEFAULT, ROOT_ADMIN_EMAILS, isRootAdminKey } from "./realtime-sync";
 
 const LOCAL_ADS_KEY = "shop7_local_ads_v1";
 const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
@@ -85,27 +85,38 @@ function getLocalProfiles(): Profile[] {
     }
   } catch (e) {}
 
-  // Garantir que administradores padrão estejam presentes inicialmente sem sobrescrever papéis personalizados
-  const deletedKeys = getDeletedProfileKeys();
+  // Garantir que os administradores mestres padrão SEMPRE estejam presentes na lista
   for (const defAdm of ROOT_ADMINS_DEFAULT) {
-    const isDeleted =
-      deletedKeys.has(defAdm.id.toLowerCase().trim()) ||
-      (defAdm.email && deletedKeys.has(defAdm.email.toLowerCase().trim()));
-    if (isDeleted) continue;
-
     const existingIndex = list.findIndex(
       (p) =>
         p.email?.toLowerCase().trim() === defAdm.email.toLowerCase().trim() ||
-        p.id.toLowerCase().trim() === defAdm.id.toLowerCase().trim()
+        p.id.toLowerCase().trim() === defAdm.id.toLowerCase().trim() ||
+        (isRootAdminKey(p.id) && isRootAdminKey(defAdm.id) && (p.email || "").toLowerCase().trim() === defAdm.email.toLowerCase().trim())
     );
     if (existingIndex >= 0) {
-      if (!list[existingIndex].full_name) {
+      list[existingIndex].id = defAdm.id;
+      list[existingIndex].email = defAdm.email;
+      if (!list[existingIndex].full_name || list[existingIndex].full_name === "Usuário") {
         list[existingIndex].full_name = defAdm.full_name;
       }
+      list[existingIndex].role = "admin";
     } else {
       list.push(defAdm);
     }
   }
+
+  // Deduplica por e-mail para integridade total
+  const seenEmails = new Set<string>();
+  const finalUniqueList: Profile[] = [];
+  for (const p of list) {
+    const em = (p.email || "").toLowerCase().trim();
+    if (em) {
+      if (seenEmails.has(em)) continue;
+      seenEmails.add(em);
+    }
+    finalUniqueList.push(p);
+  }
+  list = finalUniqueList;
 
   // Persistir a lista
   if (typeof window !== "undefined") {
@@ -126,7 +137,13 @@ function getDeletedProfileKeys(): Set<string> {
   if (!raw) return new Set();
   try {
     const list: string[] = JSON.parse(raw);
-    return new Set(list.map((k) => k.toLowerCase().trim()));
+    const cleaned = list
+      .map((k) => (k || "").toLowerCase().trim())
+      .filter((k) => !isRootAdminKey(k));
+    if (cleaned.length !== list.length) {
+      localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(cleaned));
+    }
+    return new Set(cleaned);
   } catch {
     return new Set();
   }
@@ -134,8 +151,10 @@ function getDeletedProfileKeys(): Set<string> {
 
 function addDeletedProfileKey(idOrEmail?: string | null) {
   if (typeof window === "undefined" || !idOrEmail) return;
+  const key = idOrEmail.toLowerCase().trim();
+  if (isRootAdminKey(key)) return;
   const set = getDeletedProfileKeys();
-  set.add(idOrEmail.toLowerCase().trim());
+  set.add(key);
   localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(Array.from(set)));
 }
 
@@ -404,11 +423,12 @@ export const AdsService = {
     const local = getLocalProfiles();
     const deletedKeys = getDeletedProfileKeys();
 
-    const validLocal = local.filter(
-      (p) =>
-        !deletedKeys.has(p.id.toLowerCase().trim()) &&
-        !deletedKeys.has((p.email || "").toLowerCase().trim())
-    );
+    const validLocal = local.filter((p) => {
+      const email = (p.email || "").toLowerCase().trim();
+      const id = p.id.toLowerCase().trim();
+      if (isRootAdminKey(email) || isRootAdminKey(id)) return true;
+      return !deletedKeys.has(id) && !deletedKeys.has(email);
+    });
 
     if (isLiveSupabaseConfigured) {
       try {
@@ -432,8 +452,10 @@ export const AdsService = {
             const dbId = dbProf.id.toLowerCase().trim();
             const dbEmail = (dbProf.email || "").toLowerCase().trim();
 
-            if (deletedKeys.has(dbId) || (dbEmail && deletedKeys.has(dbEmail))) {
-              continue;
+            if (!isRootAdminKey(dbId) && !isRootAdminKey(dbEmail)) {
+              if (deletedKeys.has(dbId) || (dbEmail && deletedKeys.has(dbEmail))) {
+                continue;
+              }
             }
 
             const localVersion = localMapById.get(dbId) || (dbEmail ? localMapByEmail.get(dbEmail) : undefined);
@@ -605,6 +627,10 @@ export const AdsService = {
     const normalizedId = (userId || "").toLowerCase().trim();
     const target = profiles.find((p) => p.id.toLowerCase().trim() === normalizedId);
     const targetEmail = (target?.email || "").toLowerCase().trim();
+
+    if (isRootAdminKey(normalizedId) || (targetEmail && isRootAdminKey(targetEmail))) {
+      throw new Error("Não é permitido excluir os administradores mestres da plataforma.");
+    }
 
     addDeletedProfileKey(userId);
     if (targetEmail) addDeletedProfileKey(targetEmail);

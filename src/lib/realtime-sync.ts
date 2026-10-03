@@ -16,24 +16,44 @@ const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
 const LOCAL_ORDERS_KEY = "shop7_local_orders_v1";
 const DELETED_PROFILES_KEY = "shop7_deleted_profiles_v1";
 
+export const ROOT_ADMIN_EMAILS = [
+  "malacarogeriojr@gmail.com",
+  "rogeriomalaquiasjr@gmail.com",
+];
+
+export function isRootAdminKey(idOrEmail?: string | null): boolean {
+  if (!idOrEmail) return false;
+  const k = idOrEmail.toLowerCase().trim();
+  if (ROOT_ADMIN_EMAILS.includes(k)) return true;
+  if (
+    k === "00000000-0000-4000-8000-000000000001" ||
+    k === "00000000-0000-4000-8000-000000000002"
+  ) return true;
+  if (
+    k === generateValidUuid("malacarogeriojr@gmail.com") ||
+    k === generateValidUuid("rogeriomalaquiasjr@gmail.com")
+  ) return true;
+  return false;
+}
+
 export const ROOT_ADMINS_DEFAULT: Profile[] = [
   {
-    id: generateValidUuid("malacarogeriojr@gmail.com"),
+    id: "00000000-0000-4000-8000-000000000001",
     email: "malacarogeriojr@gmail.com",
     full_name: "malaca",
     avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
     role: "admin",
-    created_at: "2026-10-01T00:00:00.000Z",
-    updated_at: "2026-10-01T00:00:00.000Z",
+    created_at: "2026-10-03T13:54:28.419Z",
+    updated_at: "2026-10-03T13:54:28.419Z",
   },
   {
-    id: generateValidUuid("rogeriomalaquiasjr@gmail.com"),
+    id: "00000000-0000-4000-8000-000000000002",
     email: "rogeriomalaquiasjr@gmail.com",
     full_name: "Rogério Malaquias",
     avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
     role: "admin",
-    created_at: "2026-10-01T00:00:00.000Z",
-    updated_at: "2026-10-01T00:00:00.000Z",
+    created_at: "2026-10-03T13:54:28.419Z",
+    updated_at: "2026-10-03T13:54:28.419Z",
   },
 ];
 
@@ -94,27 +114,41 @@ class RealtimeSyncEngine {
       if (!Array.isArray(list)) list = [];
 
       const deletedRaw = localStorage.getItem(DELETED_PROFILES_KEY);
-      const deletedSet = new Set(
-        deletedRaw ? (JSON.parse(deletedRaw) as string[]).map((k) => k.toLowerCase().trim()) : []
-      );
+      let deletedList: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+      if (!Array.isArray(deletedList)) deletedList = [];
+
+      // Higienizar deletedSet para nunca conter os e-mails e IDs dos administradores mestres
+      const cleanedDeletedList = deletedList.filter((k) => !isRootAdminKey(k));
+      if (cleanedDeletedList.length !== deletedList.length) {
+        localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(cleanedDeletedList));
+      }
 
       let changed = false;
       for (const defAdm of ROOT_ADMINS_DEFAULT) {
         const idLower = defAdm.id.toLowerCase().trim();
         const emailLower = (defAdm.email || "").toLowerCase().trim();
-        if (deletedSet.has(idLower) || (emailLower && deletedSet.has(emailLower))) {
-          continue;
-        }
 
         const idx = list.findIndex(
           (p) =>
             p.email?.toLowerCase().trim() === emailLower ||
-            p.id.toLowerCase().trim() === idLower
+            p.id.toLowerCase().trim() === idLower ||
+            (isRootAdminKey(p.id) && isRootAdminKey(defAdm.id) && (p.email || "").toLowerCase().trim() === emailLower)
         );
         if (idx >= 0) {
-          // Se já existe, não sobrescreve o papel (role) atribuído pelo admin
-          if (!list[idx].full_name) {
+          if (list[idx].id !== defAdm.id) {
+            list[idx].id = defAdm.id;
+            changed = true;
+          }
+          if (list[idx].email !== defAdm.email) {
+            list[idx].email = defAdm.email;
+            changed = true;
+          }
+          if (!list[idx].full_name || list[idx].full_name === "Usuário") {
             list[idx].full_name = defAdm.full_name;
+            changed = true;
+          }
+          if (list[idx].role !== "admin") {
+            list[idx].role = "admin";
             changed = true;
           }
         } else {
@@ -123,8 +157,23 @@ class RealtimeSyncEngine {
         }
       }
 
-      if (changed || !raw) {
-        localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
+      // Deduplica por e-mail para nunca duplicar
+      const seen = new Set<string>();
+      const deduplicated: Profile[] = [];
+      for (const item of list) {
+        const email = (item.email || "").toLowerCase().trim();
+        if (email) {
+          if (seen.has(email)) {
+            changed = true;
+            continue;
+          }
+          seen.add(email);
+        }
+        deduplicated.push(item);
+      }
+
+      if (changed || deduplicated.length !== list.length || !raw) {
+        localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(deduplicated));
       }
     } catch {}
   }
@@ -233,9 +282,11 @@ class RealtimeSyncEngine {
       const delSet = new Set(
         delRaw ? (JSON.parse(delRaw) as string[]).map((k) => k.toLowerCase().trim()) : []
       );
-      if (delSet.has(profile.id.toLowerCase().trim()) || (email && delSet.has(email))) {
-        // Se este perfil foi explicitamente deletado e a ação não é recente, ignora
-        return;
+      if (!isRootAdminKey(profile.id) && !isRootAdminKey(email)) {
+        if (delSet.has(profile.id.toLowerCase().trim()) || (email && delSet.has(email))) {
+          // Se este perfil foi explicitamente deletado e não é admin mestre, ignora
+          return;
+        }
       }
 
       const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
@@ -266,6 +317,10 @@ class RealtimeSyncEngine {
       const targetId = (id || "").toLowerCase().trim();
       const targetEmail = (email || "").toLowerCase().trim();
 
+      if (isRootAdminKey(targetId) || (targetEmail && isRootAdminKey(targetEmail))) {
+        return; // Nunca remove administradores mestres da plataforma
+      }
+
       const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
       let list: Profile[] = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(list)) list = [];
@@ -282,8 +337,8 @@ class RealtimeSyncEngine {
       const delSet = new Set(
         delRaw ? (JSON.parse(delRaw) as string[]).map((k) => k.toLowerCase().trim()) : []
       );
-      if (targetId) delSet.add(targetId);
-      if (targetEmail) delSet.add(targetEmail);
+      if (targetId && !isRootAdminKey(targetId)) delSet.add(targetId);
+      if (targetEmail && !isRootAdminKey(targetEmail)) delSet.add(targetEmail);
       localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(Array.from(delSet)));
 
       this.notifyListeners("profiles");
@@ -370,14 +425,16 @@ class RealtimeSyncEngine {
         for (const p of currentP) {
           const em = (p.email || "").toLowerCase().trim();
           const idL = p.id.toLowerCase().trim();
-          if (!delSet.has(idL) && (!em || !delSet.has(em))) {
+          if (isRootAdminKey(idL) || isRootAdminKey(em) || (!delSet.has(idL) && (!em || !delSet.has(em)))) {
             map.set(idL, p);
           }
         }
         for (const p of payload.profiles) {
           const em = (p.email || "").toLowerCase().trim();
           const idL = p.id.toLowerCase().trim();
-          if (delSet.has(idL) || (em && delSet.has(em))) continue;
+          if (!isRootAdminKey(idL) && !isRootAdminKey(em)) {
+            if (delSet.has(idL) || (em && delSet.has(em))) continue;
+          }
           if (em === "usuario@shop7.com" || p.id.includes("demo")) continue;
 
           const existing = map.get(idL);
@@ -391,8 +448,9 @@ class RealtimeSyncEngine {
             map.set(idL, p);
           }
         }
-        const mergedP = Array.from(map.values());
-        localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(mergedP));
+
+        const mergedProfiles = Array.from(map.values());
+        localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(mergedProfiles));
         this.notifyListeners("profiles");
       }
 

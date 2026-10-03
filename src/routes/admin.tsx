@@ -58,6 +58,7 @@ import {
 import { PermissionEditModal } from "@/components/admin/PermissionEditModal";
 import { AdsService } from "@/lib/ads-service";
 import { OrdersService } from "@/lib/orders-service";
+import { isRootAdminKey } from "@/lib/realtime-sync";
 import { isSupabaseEgressExceeded, type Ad, type Profile, type UserRole, type AdType, type AdStatus, type Order } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
 
@@ -350,6 +351,10 @@ function AdminPage() {
 
     if (isCurrentActive) {
       showFeedback("Você não pode excluir sua própria conta de administrador ativa.", true);
+      return;
+    }
+    if (isRootAdminKey(targetUser.id) || isRootAdminKey(targetUser.email)) {
+      showFeedback("Não é permitido excluir os administradores mestres da plataforma.", true);
       return;
     }
     if (!window.confirm(`Atenção: Excluir o usuário "${targetUser.full_name || targetUser.email}" removerá a conta e seus anúncios associados. Confirmar exclusão?`)) {
@@ -1300,9 +1305,15 @@ function AdminPage() {
                               <button
                                 type="button"
                                 onClick={() => handleDeleteUser(p)}
-                                disabled={isCurrentLoggedUser}
+                                disabled={isCurrentLoggedUser || isRootAdminKey(p.id) || isRootAdminKey(p.email)}
                                 className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-[#14151b] text-muted-foreground hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                title={isCurrentLoggedUser ? "Você não pode excluir sua própria conta ativa" : "Excluir Usuário"}
+                                title={
+                                  isCurrentLoggedUser
+                                    ? "Você não pode excluir sua própria conta ativa"
+                                    : isRootAdminKey(p.id) || isRootAdminKey(p.email)
+                                    ? "Administradores mestres não podem ser excluídos"
+                                    : "Excluir Usuário"
+                                }
                               >
                                 <Trash2 className="size-3.5" />
                               </button>

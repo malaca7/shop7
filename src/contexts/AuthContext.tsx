@@ -368,40 +368,89 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithGoogleData = async (data: GoogleUserData) => {
     setIsLoading(true);
     try {
-      const isAdmin = isUserAdminEmail(data.email);
-      const userId = "google-" + (data.id || btoa(data.email).slice(0, 10));
-      const newProfile: Profile = {
-        id: userId,
-        email: data.email,
-        full_name: data.full_name || (isAdmin ? "Rogério Malaquias Jr" : data.email.split("@")[0]),
-        avatar_url: data.avatar_url || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-        role: isAdmin ? "admin" : "user",
-        created_at: new Date().toISOString(),
+      const normalizedEmail = (data.email || "").trim().toLowerCase();
+      const isAdmin = isUserAdminEmail(normalizedEmail);
+
+      let existingProfile: Profile | null = null;
+
+      // 1. Verificar automaticamente se a conta Google já está cadastrada no Supabase
+      if (isLiveSupabaseConfigured) {
+        try {
+          const { data: dbProf } = await supabase
+            .from("profiles")
+            .select("*")
+            .ilike("email", normalizedEmail)
+            .maybeSingle();
+
+          if (dbProf) {
+            existingProfile = dbProf as Profile;
+          }
+        } catch (err) {
+          console.warn("Erro ao verificar conta existente no Supabase:", err);
+        }
+      }
+
+      // 2. Verificar também no armazenamento local
+      if (!existingProfile && typeof window !== "undefined") {
+        const localRaw = localStorage.getItem(LOCAL_PROFILES_KEY);
+        if (localRaw) {
+          try {
+            const list: Profile[] = JSON.parse(localRaw);
+            const found = list.find((p) => p.email?.toLowerCase().trim() === normalizedEmail);
+            if (found) existingProfile = found;
+          } catch {}
+        }
+      }
+
+      // Se o perfil já existe, reutiliza o ID e mantém o papel anterior (ou eleva a admin se for admin)
+      let resolvedUserId: string;
+      let resolvedRole: UserRole;
+      let resolvedCreatedAt: string;
+
+      if (existingProfile) {
+        resolvedUserId = existingProfile.id;
+        resolvedRole = isAdmin ? "admin" : existingProfile.role;
+        resolvedCreatedAt = existingProfile.created_at || new Date().toISOString();
+      } else {
+        // Criar usuário caso não exista, impedindo duplicidade
+        resolvedUserId = "google-" + (data.id || btoa(normalizedEmail).slice(0, 10));
+        resolvedRole = isAdmin ? "admin" : "user";
+        resolvedCreatedAt = new Date().toISOString();
+      }
+
+      const resolvedProfile: Profile = {
+        id: resolvedUserId,
+        email: normalizedEmail,
+        full_name: data.full_name || existingProfile?.full_name || (isAdmin ? "Rogério Malaquias Jr" : normalizedEmail.split("@")[0]),
+        avatar_url: data.avatar_url || existingProfile?.avatar_url || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+        role: resolvedRole,
+        created_at: resolvedCreatedAt,
         updated_at: new Date().toISOString(),
       };
 
-      const newUser = { id: userId, email: data.email };
+      const newUser = { id: resolvedUserId, email: normalizedEmail };
 
-      // Persistir no Supabase se ativo
+      // Persistir perfil no Supabase
       if (isLiveSupabaseConfigured) {
         try {
-          await supabase.from("profiles").upsert(newProfile);
+          await supabase.from("profiles").upsert(resolvedProfile);
         } catch (err) {
           console.warn("Aviso: Falha ao sincronizar perfil Google no Supabase:", err);
         }
       }
 
       setUser(newUser);
-      setProfile(newProfile);
+      setProfile(resolvedProfile);
       localStorage.setItem(
         LOCAL_SESSION_KEY,
-        JSON.stringify({ user: newUser, profile: newProfile })
+        JSON.stringify({ user: newUser, profile: resolvedProfile })
       );
-      syncLocalProfile(newProfile);
+      syncLocalProfile(resolvedProfile);
     } finally {
       setIsLoading(false);
     }
   };
+
 
   // 4. Fluxo Robusto de Login e Cadastro Google
   const signInWithGoogle = async () => {

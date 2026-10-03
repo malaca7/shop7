@@ -36,6 +36,9 @@ import {
   SlidersHorizontal,
   Lock,
   Unlock,
+  ShoppingBag,
+  Settings,
+  CreditCard,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
@@ -54,7 +57,8 @@ import {
 } from "@/lib/permissions";
 import { PermissionEditModal } from "@/components/admin/PermissionEditModal";
 import { AdsService } from "@/lib/ads-service";
-import type { Ad, Profile, UserRole, AdType, AdStatus } from "@/lib/supabase";
+import { OrdersService } from "@/lib/orders-service";
+import type { Ad, Profile, UserRole, AdType, AdStatus, Order } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
 
 export const Route = createFileRoute("/admin")({
@@ -69,11 +73,14 @@ function AdminPage() {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<
-    "pendentes" | "todos-anuncios" | "usuarios" | "permissoes" | "historico" | "metricas"
+    "pendentes" | "todos-anuncios" | "usuarios" | "vendas" | "permissoes" | "historico" | "configuracoes"
   >("pendentes");
   const [pendingAds, setPendingAds] = useState<Ad[]>([]);
   const [allAds, setAllAds] = useState<Ad[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [orderSearchQuery, setOrderSearchQuery] = useState("");
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>("todos");
   const [loading, setLoading] = useState(false);
 
   // Modais de Anúncios
@@ -122,20 +129,33 @@ function AdminPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pending, all, userProfiles] = await Promise.all([
+      const [pending, all, userProfiles, allOrders] = await Promise.all([
         AdsService.getPendingAds(),
         AdsService.getAllAds(),
         AdsService.getAllProfiles(),
+        OrdersService.getAllOrders(),
       ]);
       setPendingAds(pending);
       setAllAds(all);
       setProfiles(userProfiles);
+      setOrders(allOrders);
     } catch (err) {
-      console.error("Erro ao carregar dados de moderação:", err);
+      console.error("Erro ao carregar dados administrativos:", err);
     } finally {
       setLoading(false);
     }
   };
+
+  const handleAdminUpdateOrderStatus = async (orderId: string, newStatus: any) => {
+    try {
+      await OrdersService.updateOrderStatus(orderId, newStatus);
+      showFeedback(`Status do pedido ${orderId} atualizado para ${newStatus.toUpperCase()}`);
+      loadData();
+    } catch (err: any) {
+      showFeedback(err?.message || "Erro ao atualizar pedido", true);
+    }
+  };
+
 
   useEffect(() => {
     if (role === "admin") {
@@ -184,9 +204,11 @@ function AdminPage() {
       .filter((a) => a.status === "approved")
       .reduce((sum, a) => sum + (Number(a.price) || 0) * (Number(a.stock) || 1), 0);
     const usersCount = profiles.length;
+    const ordersCount = orders.length;
+    const salesVolume = orders.reduce((sum, o) => sum + (Number(o.total_price) || Number(o.price) || 0), 0);
 
-    return { total, pending, approved, rejected, totalValue, usersCount };
-  }, [allAds, pendingAds, profiles]);
+    return { total, pending, approved, rejected, totalValue, usersCount, ordersCount, salesVolume };
+  }, [allAds, pendingAds, profiles, orders]);
 
   // Formatar tempo decorrido relativo
   const getRelativeTime = (isoString: string) => {
@@ -645,8 +667,10 @@ function AdminPage() {
               { id: "pendentes", label: "Fila de Moderação", count: stats.pending, icon: Clock, badgeColor: "bg-yellow-500/20 text-yellow-400" },
               { id: "todos-anuncios", label: "Todos os Anúncios", count: stats.total, icon: Package, badgeColor: "bg-white/[0.08] text-muted-foreground" },
               { id: "usuarios", label: "Gestão de Usuários", count: stats.usersCount, icon: Users, badgeColor: "bg-purple-500/20 text-purple-300" },
+              { id: "vendas", label: "Vendas & Transações", count: orders.length, icon: ShoppingBag, badgeColor: "bg-emerald-500/20 text-emerald-400" },
               { id: "permissoes", label: "Permissões & Cargos", icon: ShieldCheck, badgeColor: "bg-primary/20 text-primary" },
               { id: "historico", label: "Histórico de Decisões", count: historyAds.length, icon: Calendar, badgeColor: "bg-white/[0.08] text-muted-foreground" },
+              { id: "configuracoes", label: "Configurações", icon: SlidersHorizontal, badgeColor: "bg-white/[0.08] text-muted-foreground" },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -677,6 +701,7 @@ function AdminPage() {
               );
             })}
           </div>
+
 
           {/* ========================================================================= */}
           {/* ABA 1: FILA DE MODERAÇÃO (PENDENTES) */}
@@ -1664,6 +1689,251 @@ function AdminPage() {
               </div>
             </div>
           )}
+
+          {/* ========================================================================= */}
+          {/* ABA 6: VENDAS & TRANSAÇÕES (ADMIN COMPLETO) */}
+          {/* ========================================================================= */}
+          {activeTab === "vendas" && (
+            <div className="mt-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <ShoppingBag className="size-5 text-primary" />
+                    <span>Gestão Geral de Vendas & Transações</span>
+                    <span className="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[10px] text-emerald-400 font-bold">
+                      {orders.length} pedidos
+                    </span>
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Supervisione todos os pedidos entre usuários, gerencie status e garanta a custódia segura.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-white/[0.08] bg-[#121317] p-2.5 flex items-center gap-3">
+                  <div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold">Volume Total</span>
+                    <p className="text-sm font-bold text-primary font-display">
+                      {formatBRL(orders.reduce((sum, o) => sum + (Number(o.total_price) || Number(o.price) || 0), 0))}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filtros de Vendas */}
+              <div className="rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative flex-1 w-full">
+                  <Search className="size-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por ID do pedido, produto, comprador ou vendedor..."
+                    value={orderSearchQuery}
+                    onChange={(e) => setOrderSearchQuery(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#121317] pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
+                  />
+                </div>
+
+                <select
+                  value={orderStatusFilter}
+                  onChange={(e) => setOrderStatusFilter(e.target.value)}
+                  className="h-10 rounded-xl border border-white/[0.08] bg-[#121317] px-3 text-xs text-foreground focus:border-primary/50 focus:outline-none w-full sm:w-auto"
+                >
+                  <option value="todos">Todos os Status</option>
+                  <option value="completed">Concluídos</option>
+                  <option value="pending">Pendentes</option>
+                  <option value="cancelled">Cancelados</option>
+                  <option value="refunded">Reembolsados</option>
+                </select>
+              </div>
+
+              {/* Lista de Pedidos */}
+              {orders
+                .filter((o) => {
+                  if (orderStatusFilter !== "todos" && o.status !== orderStatusFilter) return false;
+                  if (orderSearchQuery.trim()) {
+                    const q = orderSearchQuery.toLowerCase();
+                    return (
+                      o.id.toLowerCase().includes(q) ||
+                      o.title.toLowerCase().includes(q) ||
+                      (o.buyer_name || "").toLowerCase().includes(q) ||
+                      (o.seller_name || "").toLowerCase().includes(q)
+                    );
+                  }
+                  return true;
+                }).length === 0 ? (
+                <div className="rounded-3xl border border-white/[0.06] bg-[#0c0d10] p-12 text-center">
+                  <ShoppingBag className="mx-auto size-12 text-muted-foreground/30" />
+                  <h3 className="mt-3 text-sm font-semibold text-foreground">Nenhum pedido encontrado</h3>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+                    {orderSearchQuery || orderStatusFilter !== "todos"
+                      ? "Nenhuma transação corresponde aos filtros informados."
+                      : "Assim que os usuários realizarem compras no marketplace, as transações aparecerão aqui."}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {orders
+                    .filter((o) => {
+                      if (orderStatusFilter !== "todos" && o.status !== orderStatusFilter) return false;
+                      if (orderSearchQuery.trim()) {
+                        const q = orderSearchQuery.toLowerCase();
+                        return (
+                          o.id.toLowerCase().includes(q) ||
+                          o.title.toLowerCase().includes(q) ||
+                          (o.buyer_name || "").toLowerCase().includes(q) ||
+                          (o.seller_name || "").toLowerCase().includes(q)
+                        );
+                      }
+                      return true;
+                    })
+                    .map((ord) => (
+                      <div
+                        key={ord.id}
+                        className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-4 hover:border-white/15 transition-all"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+                            <ShoppingBag className="size-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono font-bold text-primary">{ord.id}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                                ord.status === "completed"
+                                  ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                                  : ord.status === "pending"
+                                  ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-400"
+                                  : "bg-red-500/15 border-red-500/30 text-red-400"
+                              }`}>
+                                {ord.status === "completed" ? "Concluído" : ord.status === "pending" ? "Pendente" : ord.status}
+                              </span>
+                            </div>
+                            <h4 className="mt-1 text-sm font-semibold text-foreground">{ord.title}</h4>
+                            <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                              <span>Comprador: <strong>{ord.buyer_name || "Comprador"}</strong></span>
+                              <span>·</span>
+                              <span>Vendedor: <strong>{ord.seller_name || "Vendedor"}</strong></span>
+                              <span>·</span>
+                              <span>Data: {formatDate(ord.created_at)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between lg:flex-col lg:items-end gap-2 border-t lg:border-t-0 border-white/[0.04] pt-2 lg:pt-0">
+                          <span className="text-base font-bold font-display text-primary">
+                            {formatBRL(ord.total_price || ord.price)}
+                          </span>
+
+                          <div className="flex items-center gap-1.5">
+                            {ord.status !== "completed" && (
+                              <button
+                                type="button"
+                                onClick={() => handleAdminUpdateOrderStatus(ord.id, "completed")}
+                                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/20"
+                              >
+                                Concluir
+                              </button>
+                            )}
+                            {ord.status !== "cancelled" && (
+                              <button
+                                type="button"
+                                onClick={() => handleAdminUpdateOrderStatus(ord.id, "cancelled")}
+                                className="rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-400 hover:bg-red-500/20"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* ABA 7: CONFIGURAÇÕES DO SISTEMA (ADMIN COMPLETO) */}
+          {/* ========================================================================= */}
+          {activeTab === "configuracoes" && (
+            <div className="mt-6 space-y-6 max-w-4xl">
+              <div>
+                <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <SlidersHorizontal className="size-5 text-primary" />
+                  <span>Configurações & Parâmetros da Plataforma</span>
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Ajuste políticas globais de moderação, taxas e segurança da plataforma SHOP7.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-5">
+                  <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider">
+                    <DollarSign className="size-4" />
+                    <span>Taxa de Intermediação</span>
+                  </div>
+                  <h3 className="mt-2 text-sm font-semibold text-foreground">Taxa Promocional de Lançamento</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Atualmente definida em <strong>0.0%</strong> (100% do valor vai para o anunciante com garantia em custódia).
+                  </p>
+                  <div className="mt-4 flex items-center gap-2">
+                    <span className="rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-bold text-emerald-400">
+                      Taxa Zero Ativa
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-5">
+                  <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider">
+                    <ShieldCheck className="size-4" />
+                    <span>Modo de Moderação</span>
+                  </div>
+                  <h3 className="mt-2 text-sm font-semibold text-foreground">Fila Obrigatória Prévia</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Novos anúncios e edições entram como <strong>pendentes</strong> exigindo aprovação de Moderador ou Admin.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2">
+                    <span className="rounded-lg bg-primary/15 border border-primary/30 px-2.5 py-1 text-xs font-bold text-primary">
+                      Ativado (Proteção Máxima)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-5">
+                  <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider">
+                    <Lock className="size-4" />
+                    <span>Autenticação & Contas</span>
+                  </div>
+                  <h3 className="mt-2 text-sm font-semibold text-foreground">Exclusivo Google OAuth 2.0</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Sem senhas em texto puro. Prevenção de duplicidade por e-mail e ID permanente ativa.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2">
+                    <span className="rounded-lg bg-purple-500/15 border border-purple-500/30 px-2.5 py-1 text-xs font-bold text-purple-300">
+                      OAuth 2.0 / GIS
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.06] bg-[#0c0d10] p-5">
+                  <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider">
+                    <CheckCircle2 className="size-4" />
+                    <span>Banco de Dados</span>
+                  </div>
+                  <h3 className="mt-2 text-sm font-semibold text-foreground">Supabase PostgreSQL</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Conexão ativa com RLS (Row Level Security) e tabelas <code>profiles</code>, <code>ads</code> e <code>orders</code>.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2">
+                    <span className="rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-bold text-emerald-400">
+                      Conectado e Operacional
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </main>
 

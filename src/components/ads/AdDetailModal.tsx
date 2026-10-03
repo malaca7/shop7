@@ -26,6 +26,7 @@ interface AdDetailModalProps {
   onClose: () => void;
   onApprove?: (ad: Ad) => void;
   onReject?: (ad: Ad) => void;
+  onBuy?: (ad: Ad) => void;
 }
 
 export function AdDetailModal({
@@ -34,6 +35,7 @@ export function AdDetailModal({
   onClose,
   onApprove,
   onReject,
+  onBuy,
 }: AdDetailModalProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
@@ -384,8 +386,23 @@ export function AdDetailModal({
                 <span>Reavaliar & Aprovar</span>
               </button>
             )}
+
+            {/* Ação de Compra pelo Usuário / Comprador */}
+            {ad.status === "approved" && onBuy && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onBuy(ad);
+                }}
+                className="flex-1 sm:flex-none gradient-lime flex items-center justify-center gap-1.5 rounded-xl px-5 py-2.5 text-xs font-bold text-black shadow-[0_4px_16px_rgba(132,204,22,0.35)] hover:brightness-110 active:scale-95 transition-all"
+              >
+                <span>Comprar Agora ({formatBRL(ad.price)})</span>
+              </button>
+            )}
           </div>
         </div>
+
       </div>
     </div>
   );

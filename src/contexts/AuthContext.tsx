@@ -310,6 +310,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       let registeredWithSupabase = false;
+      let newId = "user-" + Date.now();
+      
       if (isLiveSupabaseConfigured) {
         try {
           const { data, error } = await supabase.auth.signUp({
@@ -321,31 +323,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           if (!error && data?.user) {
             registeredWithSupabase = true;
+            newId = data.user.id;
           }
         } catch (e) {
           console.warn("Supabase indisponível, cadastrando via sessão local:", e);
         }
       }
 
-      if (!registeredWithSupabase) {
-        const isAdmin = isUserAdminEmail(email);
-        const newUser = { id: "user-" + Date.now(), email };
-        const newProfile: Profile = {
-          id: newUser.id,
-          email,
-          full_name: fullName || (isAdmin ? "Rogério Malaquias Jr" : email.split("@")[0]) || "Usuário SHOP7",
-          avatar_url: null,
-          role: isAdmin ? "admin" : "user",
-          created_at: new Date().toISOString(),
-        };
-        setUser(newUser);
-        setProfile(newProfile);
-        localStorage.setItem(
-          LOCAL_SESSION_KEY,
-          JSON.stringify({ user: newUser, profile: newProfile })
-        );
-        syncLocalProfile(newProfile);
+      const isAdmin = isUserAdminEmail(email);
+      const newProfile: Profile = {
+        id: newId,
+        email,
+        full_name: fullName || (isAdmin ? "Rogério Malaquias Jr" : email.split("@")[0]) || "Usuário SHOP7",
+        avatar_url: null,
+        role: isAdmin ? "admin" : "user",
+        created_at: new Date().toISOString(),
+      };
+      
+      const newUser = { id: newId, email };
+
+      // Se registrou no Supabase, tenta forçar o upsert do perfil caso a trigger SQL falhe
+      if (registeredWithSupabase) {
+        try {
+          await supabase.from("profiles").upsert({
+            ...newProfile,
+            updated_at: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn("Aviso: Falha ao inserir perfil no Supabase manualmente:", err);
+        }
       }
+
+      setUser(newUser);
+      setProfile(newProfile);
+      localStorage.setItem(
+        LOCAL_SESSION_KEY,
+        JSON.stringify({ user: newUser, profile: newProfile })
+      );
+      syncLocalProfile(newProfile);
     } finally {
       setIsLoading(false);
     }

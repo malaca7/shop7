@@ -68,32 +68,38 @@ export const isLiveSupabaseConfigured =
   !supabaseAnonKey.includes("sua-chave") &&
   !supabaseAnonKey.includes("dummy");
 
-// Safe fetch wrapper que intercepta qualquer erro de rede/DNS ('TypeError: Failed to fetch')
-// impedindo que exceções não tratadas quebrem a aplicação React
+export let isSupabaseEgressExceeded = false;
+
+// Safe fetch wrapper que intercepta erros de rede/DNS e detecta cota de egress do Supabase
 const safeFetch: typeof fetch = async (input, init) => {
   if (!isLiveSupabaseConfigured) {
     return new Response(
       JSON.stringify({
-        message: "Supabase em modo local de demonstração",
-        code: "LOCAL_MODE",
+        message: "Configuração de Supabase ausente ou inválida",
+        code: "UNCONFIGURED",
       }),
       {
-        status: 200,
+        status: 503,
+        statusText: "Service Unavailable",
         headers: { "Content-Type": "application/json" },
       }
     );
   }
 
   try {
-    return await fetch(input, init);
+    const res = await fetch(input, init);
+    if (res.status === 402) {
+      isSupabaseEgressExceeded = true;
+    }
+    return res;
   } catch (err: any) {
     console.warn(
-      `[SHOP7 Supabase] Conexão indisponível (${err?.message || "Failed to fetch"}). Utilizando armazenamento local seguro.`
+      `[SHOP7 Supabase] Conexão indisponível (${err?.message || "Failed to fetch"}). Operando em modo tolerante a falhas.`
     );
     return new Response(
       JSON.stringify({
         message: err?.message || "Failed to fetch",
-        details: "Servidor Supabase offline ou inacessível",
+        details: "Servidor Supabase temporariamente inacessível",
         code: "NETWORK_FAILURE",
       }),
       {
@@ -105,27 +111,17 @@ const safeFetch: typeof fetch = async (input, init) => {
   }
 };
 
-// Cliente Supabase oficial com proteção total contra falhas de rede
-export const supabase: SupabaseClient = isLiveSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-      },
-      global: {
-        fetch: safeFetch,
-      },
-    })
-  : createClient(
-      "https://shop7-local.supabase.co",
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy",
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-        global: {
-          fetch: safeFetch,
-        },
-      }
-    );
+// Cliente Supabase oficial
+export const supabase: SupabaseClient = createClient(
+  supabaseUrl || "https://vpxpfbacysibxlfjayks.supabase.co",
+  supabaseAnonKey || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy",
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+    global: {
+      fetch: safeFetch,
+    },
+  }
+);

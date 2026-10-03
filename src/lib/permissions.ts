@@ -442,7 +442,11 @@ export function canPerformUserAction(
 
     // Não pode excluir o administrador mestre
     const email = (targetProfile.email || "").toLowerCase().trim();
-    if (email === "malacarogeriojr@gmail.com" || email === "admin@shop7.com") {
+    if (
+      email === "malacarogeriojr@gmail.com" ||
+      email === "rogeriomalaquiasjr@gmail.com" ||
+      email === "admin@shop7.com"
+    ) {
       return {
         allowed: false,
         reason: "Esta conta é um Administrador Mestre do SHOP7 e não pode ser excluída.",

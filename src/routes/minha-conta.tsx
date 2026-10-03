@@ -46,39 +46,6 @@ export const Route = createFileRoute("/minha-conta")({
   component: MinhaContaPage,
 });
 
-// Pedidos simulados realistas para a aba de compras do usuário
-interface UserOrder {
-  id: string;
-  title: string;
-  category: string;
-  price: number;
-  date: string;
-  status: "completed" | "in_transit" | "processing";
-  seller: string;
-  code?: string;
-}
-
-const DEMO_ORDERS: UserOrder[] = [
-  {
-    id: "PED-98214",
-    title: "Chave Global de Ativação · Cyberpunk 2077 Phantom Liberty",
-    category: "jogos-digitais",
-    price: 139.90,
-    date: new Date(Date.now() - 86400000 * 3).toISOString(),
-    status: "completed",
-    seller: "KeyMaster Oficial",
-    code: "GOG-CYBER-8842-XPL9-9121",
-  },
-  {
-    id: "PED-74190",
-    title: "Mousepad Gamer Extra Grande 900x400mm Speed Dark",
-    category: "produtos-fisicos",
-    price: 89.00,
-    date: new Date(Date.now() - 86400000 * 7).toISOString(),
-    status: "completed",
-    seller: "ProGaming Brasil",
-  },
-];
 
 function MinhaContaPage() {
   const { user, profile, role, signOut, updateProfile, isLoading } = useAuth();

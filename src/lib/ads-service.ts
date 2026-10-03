@@ -28,22 +28,33 @@ function saveLocalAds(ads: Ad[]) {
 }
 
 function getLocalProfiles(): Profile[] {
-  if (typeof window === "undefined") return INITIAL_DEMO_PROFILES;
+  if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
   let list: Profile[] = [];
-  if (!raw) {
-    list = [...INITIAL_DEMO_PROFILES];
-    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
-  } else {
+  if (raw) {
     try {
       list = JSON.parse(raw);
-      if (!Array.isArray(list) || list.length === 0) {
-        list = [...INITIAL_DEMO_PROFILES];
-        localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
-      }
     } catch {
-      list = [...INITIAL_DEMO_PROFILES];
+      list = [];
     }
+  }
+  if (!Array.isArray(list)) list = [];
+
+  // Higienização completa contra contas fictícias residuais
+  const beforeCount = list.length;
+  list = list.filter((p) => {
+    const email = (p.email || "").toLowerCase().trim();
+    return (
+      email &&
+      email !== "usuario@shop7.com" &&
+      !email.includes("shop7.local") &&
+      p.id !== "user-demo" &&
+      p.id !== "user-demo-1" &&
+      !p.id?.includes("demo")
+    );
+  });
+  if (list.length !== beforeCount) {
+    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
   }
 
   // Sincroniza usuário da sessão ativa atual caso não esteja na lista
@@ -51,11 +62,17 @@ function getLocalProfiles(): Profile[] {
     const activeSessionRaw = localStorage.getItem("shop7_active_auth_session_v1");
     if (activeSessionRaw) {
       const parsed = JSON.parse(activeSessionRaw);
-      if (parsed?.profile?.email) {
+      const activeEmail = (parsed?.profile?.email || "").toLowerCase().trim();
+      if (
+        activeEmail &&
+        activeEmail !== "usuario@shop7.com" &&
+        !activeEmail.includes("shop7.local") &&
+        !parsed.profile.id?.includes("demo")
+      ) {
         const foundIndex = list.findIndex(
           (p) =>
             p.id === parsed.profile.id ||
-            p.email?.toLowerCase().trim() === parsed.profile.email.toLowerCase().trim()
+            p.email?.toLowerCase().trim() === activeEmail
         );
         if (foundIndex >= 0) {
           list[foundIndex] = { ...list[foundIndex], ...parsed.profile };
@@ -67,10 +84,21 @@ function getLocalProfiles(): Profile[] {
     }
   } catch (e) {}
 
-  // Garantir que malacarogeriojr@gmail.com sempre conste como admin se existir
-  const malacaProfile = list.find((p) => p.email?.toLowerCase().trim() === "malacarogeriojr@gmail.com");
-  if (malacaProfile && malacaProfile.role !== "admin") {
-    malacaProfile.role = "admin";
+  // Garantir que administradores mestres sempre constem como admin
+  const adminEmails = [
+    "malacarogeriojr@gmail.com",
+    "rogeriomalaquiasjr@gmail.com",
+    "admin@shop7.com",
+  ];
+  let updatedAny = false;
+  for (const admEmail of adminEmails) {
+    const adminProf = list.find((p) => p.email?.toLowerCase().trim() === admEmail);
+    if (adminProf && adminProf.role !== "admin") {
+      adminProf.role = "admin";
+      updatedAny = true;
+    }
+  }
+  if (updatedAny) {
     localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
   }
 
@@ -544,14 +572,16 @@ export const AdsService = {
     } else {
       finalProfile = updatedFromDb || {
         id: userId,
-        email: data.email || "usuario@shop7.com",
+        email: data.email || "",
         full_name: data.full_name || null,
         avatar_url: data.avatar_url || null,
         role: data.role || "user",
         created_at: new Date().toISOString(),
         ...changes,
       };
-      profiles.unshift(finalProfile);
+      if (finalProfile.email) {
+        profiles.unshift(finalProfile);
+      }
     }
 
     saveLocalProfiles(profiles);

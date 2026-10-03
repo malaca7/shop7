@@ -352,7 +352,7 @@ function ModeracaoPage() {
       if (userSearch.trim()) {
         const q = userSearch.toLowerCase();
         const matchesName = (p.full_name || "").toLowerCase().includes(q);
-        const matchesEmail = p.email.toLowerCase().includes(q);
+        const matchesEmail = (p.email || "").toLowerCase().includes(q);
         if (!matchesName && !matchesEmail) return false;
       }
       return true;

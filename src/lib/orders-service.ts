@@ -2,51 +2,31 @@ import { supabase, isLiveSupabaseConfigured, type Order, type OrderStatus } from
 
 const LOCAL_ORDERS_KEY = "shop7_local_orders_v1";
 
-const INITIAL_DEMO_ORDERS: Order[] = [
-  {
-    id: "PED-98214",
-    ad_id: "ad-demo-1",
-    buyer_id: "user-demo",
-    seller_id: "seller-1",
-    title: "Chave Global de Ativação · Cyberpunk 2077 Phantom Liberty",
-    price: 139.90,
-    quantity: 1,
-    total_price: 139.90,
-    status: "completed",
-    seller_name: "KeyMaster Oficial",
-    buyer_name: "Comprador SHOP7",
-    activation_code: "GOG-CYBER-8842-XPL9-9121",
-    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-  },
-  {
-    id: "PED-74190",
-    ad_id: "ad-demo-2",
-    buyer_id: "user-demo",
-    seller_id: "seller-2",
-    title: "Mousepad Gamer Extra Grande 900x400mm Speed Dark",
-    price: 89.00,
-    quantity: 1,
-    total_price: 89.00,
-    status: "completed",
-    seller_name: "ProGaming Brasil",
-    buyer_name: "Comprador SHOP7",
-    created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 7).toISOString(),
-  },
-];
+const INITIAL_DEMO_ORDERS: Order[] = [];
 
 function getLocalOrders(): Order[] {
-  if (typeof window === "undefined") return INITIAL_DEMO_ORDERS;
+  if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(LOCAL_ORDERS_KEY);
   if (!raw) {
-    localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(INITIAL_DEMO_ORDERS));
-    return INITIAL_DEMO_ORDERS;
+    return [];
   }
   try {
-    return JSON.parse(raw);
+    const list: Order[] = JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+    // Higienização automática: remover pedidos fictícios residuais
+    const cleaned = list.filter(
+      (o) =>
+        o.buyer_id !== "user-demo" &&
+        o.id !== "PED-98214" &&
+        o.id !== "PED-74190" &&
+        !o.buyer_id?.includes("demo")
+    );
+    if (cleaned.length !== list.length) {
+      saveLocalOrders(cleaned);
+    }
+    return cleaned;
   } catch {
-    return INITIAL_DEMO_ORDERS;
+    return [];
   }
 }
 
@@ -144,7 +124,7 @@ export const OrdersService = {
       }
     }
     const local = getLocalOrders();
-    return local.filter((o) => o.buyer_id === buyerId || buyerId === "user-demo");
+    return local.filter((o) => o.buyer_id === buyerId);
   },
 
   // 3. Obter vendas de um usuário (vendedor)

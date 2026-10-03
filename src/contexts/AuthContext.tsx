@@ -23,6 +23,7 @@ export function isUserAdminEmail(email?: string | null): boolean {
   const normalized = email.trim().toLowerCase();
   return (
     normalized === "malacarogeriojr@gmail.com" ||
+    normalized === "rogeriomalaquiasjr@gmail.com" ||
     normalized === "admin@shop7.com" ||
     normalized.includes("admin")
   );
@@ -32,7 +33,13 @@ const LOCAL_SESSION_KEY = "shop7_active_auth_session_v1";
 const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
 
 function syncLocalProfile(profile: Profile) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !profile) return;
+  const normalizedEmail = (profile.email || "").toLowerCase().trim();
+  // Bloqueio rigoroso: nunca registrar contas de fallback ou demo
+  if (!normalizedEmail || normalizedEmail === "usuario@shop7.com" || profile.id?.includes("demo")) {
+    return;
+  }
+
   const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
   let list: Profile[] = [];
   if (raw) {
@@ -42,7 +49,14 @@ function syncLocalProfile(profile: Profile) {
   }
   if (!Array.isArray(list)) list = [];
 
-  const normalizedEmail = (profile.email || "").toLowerCase().trim();
+  // Higienização de contas demo residuais na lista
+  list = list.filter(
+    (p) =>
+      p.email?.toLowerCase().trim() !== "usuario@shop7.com" &&
+      !p.email?.includes("shop7.local") &&
+      !p.id?.includes("demo")
+  );
+
   const isAdmin = isUserAdminEmail(profile.email);
   const syncedProfile: Profile = {
     ...profile,
@@ -89,10 +103,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Carrega a sessão inicial
+  // Carrega a sessão inicial sem fallbacks fictícios
   useEffect(() => {
     async function initAuth() {
       setIsLoading(true);
+
+      const restoreLocalSession = () => {
+        const saved = localStorage.getItem(LOCAL_SESSION_KEY);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            const email = (parsed?.user?.email || "").toLowerCase().trim();
+            // Descartar imediatamente se for usuário legado de demonstração ou inválido
+            if (
+              !email ||
+              email === "usuario@shop7.com" ||
+              email.includes("shop7.local") ||
+              parsed?.user?.id?.includes("demo")
+            ) {
+              localStorage.removeItem(LOCAL_SESSION_KEY);
+              setUser(null);
+              setProfile(null);
+              return;
+            }
+
+            if (isUserAdminEmail(email)) {
+              if (parsed.profile) parsed.profile.role = "admin";
+              localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
+            }
+            setUser(parsed.user);
+            setProfile(parsed.profile);
+            if (parsed.profile) syncLocalProfile(parsed.profile);
+          } catch {
+            localStorage.removeItem(LOCAL_SESSION_KEY);
+            setUser(null);
+            setProfile(null);
+          }
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
+      };
 
       if (isLiveSupabaseConfigured) {
         try {
@@ -128,62 +179,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               syncLocalProfile(resProf);
             }
           } else {
-            // Verificar sessão local salva
-            const saved = localStorage.getItem(LOCAL_SESSION_KEY);
-            if (saved) {
-              try {
-                const parsed = JSON.parse(saved);
-                if (isUserAdminEmail(parsed.user?.email)) {
-                  parsed.profile.role = "admin";
-                  localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
-                }
-                setUser(parsed.user);
-                setProfile(parsed.profile);
-                if (parsed.profile) syncLocalProfile(parsed.profile);
-              } catch {
-                localStorage.removeItem(LOCAL_SESSION_KEY);
-              }
-            }
+            restoreLocalSession();
           }
         } catch (err) {
-          console.warn("Supabase indisponível, usando sessão local:", err);
-          const saved = localStorage.getItem(LOCAL_SESSION_KEY);
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved);
-              if (isUserAdminEmail(parsed.user?.email)) {
-                parsed.profile.role = "admin";
-                localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
-              }
-              setUser(parsed.user);
-              setProfile(parsed.profile);
-              if (parsed.profile) syncLocalProfile(parsed.profile);
-            } catch {
-              localStorage.removeItem(LOCAL_SESSION_KEY);
-            }
-          }
+          console.warn("Supabase auth offline, verificando sessão local válida:", err);
+          restoreLocalSession();
         }
       } else {
-        // Modo Demonstração Local Persistente
-        const saved = localStorage.getItem(LOCAL_SESSION_KEY);
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (isUserAdminEmail(parsed.user?.email)) {
-              parsed.profile.role = "admin";
-              localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(parsed));
-            }
-            setUser(parsed.user);
-            setProfile(parsed.profile);
-            if (parsed.profile) syncLocalProfile(parsed.profile);
-          } catch {
-            localStorage.removeItem(LOCAL_SESSION_KEY);
-          }
-        } else {
-          // Sem banco de dados e sem sessão salva: permanece deslogado
-          setUser(null);
-          setProfile(null);
-        }
+        restoreLocalSession();
       }
 
       setIsLoading(false);
@@ -274,7 +277,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let name = email.split("@")[0] || "Usuário";
         if (isAdmin) {
           role = "admin";
-          name = email.toLowerCase() === "malacarogeriojr@gmail.com" ? "Rogério Malaquias Jr" : "Administrador SHOP7";
+          name =
+            email.toLowerCase() === "malacarogeriojr@gmail.com" ||
+            email.toLowerCase() === "rogeriomalaquiasjr@gmail.com"
+              ? "Rogério Malaquias Jr"
+              : "Administrador SHOP7";
         } else if (email.includes("mod")) {
           role = "moderator";
           name = "Moderador SHOP7";

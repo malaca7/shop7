@@ -58,7 +58,7 @@ import {
 import { PermissionEditModal } from "@/components/admin/PermissionEditModal";
 import { AdsService } from "@/lib/ads-service";
 import { OrdersService } from "@/lib/orders-service";
-import type { Ad, Profile, UserRole, AdType, AdStatus, Order } from "@/lib/supabase";
+import { isSupabaseEgressExceeded, type Ad, type Profile, type UserRole, type AdType, type AdStatus, type Order } from "@/lib/supabase";
 import { formatBRL, CATEGORIES } from "@/data/catalog";
 
 export const Route = createFileRoute("/admin")({
@@ -417,7 +417,7 @@ function AdminPage() {
       if (userSearch.trim()) {
         const q = userSearch.toLowerCase();
         const matchesName = (p.full_name || "").toLowerCase().includes(q);
-        const matchesEmail = p.email.toLowerCase().includes(q);
+        const matchesEmail = (p.email || "").toLowerCase().includes(q);
         if (!matchesName && !matchesEmail) return false;
       }
       return true;
@@ -1924,10 +1924,22 @@ function AdminPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     Conexão ativa com RLS (Row Level Security) e tabelas <code>profiles</code>, <code>ads</code> e <code>orders</code>.
                   </p>
-                  <div className="mt-4 flex items-center gap-2">
-                    <span className="rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-bold text-emerald-400">
-                      Conectado e Operacional
-                    </span>
+                  <div className="mt-4 flex flex-col gap-2">
+                    {isSupabaseEgressExceeded ? (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+                        <p className="font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="size-4 text-amber-400 shrink-0" />
+                          Cota de Egress Atingida no Supabase (HTTP 402)
+                        </p>
+                        <p className="mt-1 text-[11px] text-amber-200/80 leading-relaxed">
+                          O projeto Supabase teve a transferência pausada pelo provedor por atingir a cota gratuita. Para reativar a sincronização na nuvem em tempo real, acesse o painel da sua organização no Supabase e ajuste o Spend Cap ou realize o upgrade do plano.
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="self-start rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-bold text-emerald-400">
+                        Conectado e Operacional
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

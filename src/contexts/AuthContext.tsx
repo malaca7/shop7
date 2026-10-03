@@ -180,23 +180,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem(LOCAL_SESSION_KEY);
           }
         } else {
-          // Usuário padrão de demonstração para conveniência
-          const defaultUser = { id: "user-demo-1", email: "usuario@shop7.com" };
-          const defaultProfile: Profile = {
-            id: "user-demo-1",
-            email: "usuario@shop7.com",
-            full_name: "Carlos Eduardo",
-            avatar_url: null,
-            role: "user",
-            created_at: new Date().toISOString(),
-          };
-          setUser(defaultUser);
-          setProfile(defaultProfile);
-          localStorage.setItem(
-            LOCAL_SESSION_KEY,
-            JSON.stringify({ user: defaultUser, profile: defaultProfile })
-          );
-          syncLocalProfile(defaultProfile);
+          // Sem banco de dados e sem sessão salva: permanece deslogado
+          setUser(null);
+          setProfile(null);
         }
       }
 

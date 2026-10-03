@@ -35,6 +35,24 @@ function saveLocalOrders(orders: Order[]) {
   localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(orders));
 }
 
+export function subscribeToOrders(onEvent: () => void) {
+  if (!isLiveSupabaseConfigured) return () => {};
+  const channel = supabase
+    .channel("realtime_orders_changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "orders" },
+      () => {
+        onEvent();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
 export const OrdersService = {
   // 1. Criar novo pedido (Compra realizada por usuário)
   async createOrder(params: {
@@ -51,8 +69,7 @@ export const OrdersService = {
     const qty = params.quantity || 1;
     const totalPrice = params.price * qty;
 
-    const newOrder: Order = {
-      id: "PED-" + Math.floor(10000 + Math.random() * 90000),
+    const newOrderPayload = {
       ad_id: params.ad_id || null,
       buyer_id: params.buyer_id,
       seller_id: params.seller_id || null,
@@ -60,31 +77,22 @@ export const OrdersService = {
       price: params.price,
       quantity: qty,
       total_price: totalPrice,
-      status: "completed",
+      status: "completed" as const,
       seller_name: params.seller_name || "Vendedor SHOP7",
       buyer_name: params.buyer_name || "Comprador SHOP7",
-      activation_code: params.activation_code || (params.title.toLowerCase().includes("chave") || params.title.toLowerCase().includes("key") ? "SHOP7-" + Math.random().toString(36).substring(2, 10).toUpperCase() : null),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      activation_code:
+        params.activation_code ||
+        (params.title.toLowerCase().includes("chave") ||
+        params.title.toLowerCase().includes("key")
+          ? "SHOP7-" + Math.random().toString(36).substring(2, 10).toUpperCase()
+          : null),
     };
 
     if (isLiveSupabaseConfigured) {
       try {
         const { data, error } = await supabase
           .from("orders")
-          .insert([{
-            ad_id: newOrder.ad_id,
-            buyer_id: newOrder.buyer_id,
-            seller_id: newOrder.seller_id,
-            title: newOrder.title,
-            price: newOrder.price,
-            quantity: newOrder.quantity,
-            total_price: newOrder.total_price,
-            status: newOrder.status,
-            seller_name: newOrder.seller_name,
-            buyer_name: newOrder.buyer_name,
-            activation_code: newOrder.activation_code,
-          }])
+          .insert([newOrderPayload])
           .select()
           .single();
 
@@ -94,15 +102,25 @@ export const OrdersService = {
           saveLocalOrders(local);
           return data;
         }
-      } catch (err) {
-        console.warn("Falha ao registrar pedido no Supabase, salvando local:", err);
+        if (error) {
+          console.warn("Aviso ao criar pedido no Supabase:", error.message);
+        }
+      } catch (err: any) {
+        console.warn("Falha ao registrar pedido no Supabase:", err?.message || err);
       }
     }
 
+    const fallbackOrder: Order = {
+      id: "PED-" + Math.floor(10000 + Math.random() * 90000),
+      ...newOrderPayload,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
     const local = getLocalOrders();
-    local.unshift(newOrder);
+    local.unshift(fallbackOrder);
     saveLocalOrders(local);
-    return newOrder;
+    return fallbackOrder;
   },
 
   // 2. Obter compras de um usuário (comprador)
@@ -116,7 +134,8 @@ export const OrdersService = {
           .eq("buyer_id", buyerId)
           .order("created_at", { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
+          saveLocalOrders(data);
           return data;
         }
       } catch (err) {
@@ -138,7 +157,7 @@ export const OrdersService = {
           .eq("seller_id", sellerId)
           .order("created_at", { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data;
         }
       } catch (err) {

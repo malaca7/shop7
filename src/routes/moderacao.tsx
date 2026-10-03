@@ -121,6 +121,8 @@ function ModeracaoPage() {
   useEffect(() => {
     if (role === "moderator" || role === "admin") {
       loadData();
+      const unsubAds = AdsService.subscribeToAds(() => loadData());
+      return () => unsubAds();
     }
   }, [role]);
 

@@ -741,3 +741,43 @@ export const AdsService = {
     };
   },
 };
+
+// ================================================================
+// ASSINATURAS EM TEMPO REAL (SUPABASE REALTIME CHANNELS)
+// ================================================================
+
+export function subscribeToAds(onEvent: () => void) {
+  if (!isLiveSupabaseConfigured) return () => {};
+  const channel = supabase
+    .channel("realtime_ads_changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "ads" },
+      () => {
+        onEvent();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+export function subscribeToProfiles(onEvent: () => void) {
+  if (!isLiveSupabaseConfigured) return () => {};
+  const channel = supabase
+    .channel("realtime_profiles_changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "profiles" },
+      () => {
+        onEvent();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}

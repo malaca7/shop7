@@ -89,6 +89,11 @@ function HomePage() {
       }
     }
     loadApproved();
+
+    const unsubscribe = AdsService.subscribeToAds(() => {
+      loadApproved();
+    });
+    return () => unsubscribe();
   }, []);
 
   const displayedProducts = useMemo(() => {

@@ -217,10 +217,10 @@ CREATE POLICY "Exclusão de anúncios"
         OR public.is_admin()
     );
 
--- Garantir que malacarogeriojr@gmail.com receba a role 'admin'
+-- Garantir que os administradores mestres recebam a role 'admin'
 UPDATE public.profiles
 SET role = 'admin'
-WHERE LOWER(email) = 'malacarogeriojr@gmail.com';
+WHERE LOWER(email) IN ('malacarogeriojr@gmail.com', 'rogeriomalaquiasjr@gmail.com');
 
 -- ================================================================
 -- 4. Tabela de Pedidos / Transações (public.orders)
@@ -275,5 +275,18 @@ CREATE POLICY "Atualização de pedidos"
         OR auth.uid() = seller_id
         OR public.is_admin()
     );
+
+-- ================================================================
+-- HABILITAR TEMPO REAL (SUPABASE REALTIME)
+-- ================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles, public.ads, public.orders;
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
+
 
 

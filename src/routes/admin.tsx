@@ -161,6 +161,16 @@ function AdminPage() {
     if (role === "admin") {
       setMatrixFeatures(getPermissionsMatrixFeatures());
       loadData();
+
+      const unsubAds = AdsService.subscribeToAds(() => loadData());
+      const unsubProfiles = AdsService.subscribeToProfiles(() => loadData());
+      const unsubOrders = OrdersService.subscribeToOrders(() => loadData());
+
+      return () => {
+        unsubAds();
+        unsubProfiles();
+        unsubOrders();
+      };
     }
   }, [role, activeTab]);
 

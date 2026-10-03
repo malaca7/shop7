@@ -117,6 +117,13 @@ function MinhaContaPage() {
     loadData();
     if (profile?.full_name) setEditName(profile.full_name);
     if (profile?.avatar_url) setEditAvatar(profile.avatar_url);
+
+    const unsubAds = AdsService.subscribeToAds(() => loadData());
+    const unsubOrders = OrdersService.subscribeToOrders(() => loadData());
+    return () => {
+      unsubAds();
+      unsubOrders();
+    };
   }, [user, role, profile]);
 
   const handleDeleteAd = async (id: string) => {

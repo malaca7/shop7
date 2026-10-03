@@ -194,6 +194,34 @@ function saveLocalProfiles(profiles: Profile[]) {
   localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
 }
 
+const DELETED_PROFILES_KEY = "shop7_deleted_profiles_v1";
+
+function getDeletedProfileKeys(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  const raw = localStorage.getItem(DELETED_PROFILES_KEY);
+  if (!raw) return new Set();
+  try {
+    const list: string[] = JSON.parse(raw);
+    return new Set(list.map((k) => k.toLowerCase().trim()));
+  } catch {
+    return new Set();
+  }
+}
+
+function addDeletedProfileKey(idOrEmail?: string | null) {
+  if (typeof window === "undefined" || !idOrEmail) return;
+  const set = getDeletedProfileKeys();
+  set.add(idOrEmail.toLowerCase().trim());
+  localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(Array.from(set)));
+}
+
+function removeDeletedProfileKey(idOrEmail?: string | null) {
+  if (typeof window === "undefined" || !idOrEmail) return;
+  const set = getDeletedProfileKeys();
+  set.delete(idOrEmail.toLowerCase().trim());
+  localStorage.setItem(DELETED_PROFILES_KEY, JSON.stringify(Array.from(set)));
+}
+
 export const AdsService = {
   // 1. Obter anúncios aprovados (Público / Marketplace)
   async getApprovedAds(): Promise<Ad[]> {
@@ -311,7 +339,7 @@ export const AdsService = {
           saveLocalAds(ads);
           return data;
         }
-        console.warn("Falha ao inserir no Supabase (verifique schema.sql), gravando local:", error?.message);
+        console.warn("Falha ao inserir no Supabase, gravando local:", error?.message);
       } catch (e: any) {
         console.warn("Exceção no Supabase insert, gravando local:", e.message);
       }
@@ -328,11 +356,10 @@ export const AdsService = {
   },
 
   // 6. Atualizar anúncio existente (Dono)
-  // Regra de Ouro: Edição de anúncio reverte para 'pending' e exige nova aprovação!
   async updateAd(id: string, updateData: Partial<Ad>): Promise<Ad> {
     const changes = {
       ...updateData,
-      status: "pending" as const, // Força retorno para moderação
+      status: "pending" as const,
       rejection_reason: null,
       moderated_by: null,
       moderated_at: null,
@@ -350,8 +377,6 @@ export const AdsService = {
           .single();
         if (!error && data) {
           updatedFromDb = data;
-        } else {
-          console.warn("Falha ao atualizar no Supabase, salvando localmente:", error?.message);
         }
       } catch (err) {
         console.warn("Supabase indisponível em updateAd, salvando localmente:", err);
@@ -412,8 +437,6 @@ export const AdsService = {
           .single();
         if (!error && data) {
           moderatedFromDb = data;
-        } else {
-          console.warn("Falha ao moderar no Supabase, aplicando localmente:", error?.message);
         }
       } catch (err) {
         console.warn("Supabase indisponível em moderateAd, aplicando localmente:", err);
@@ -457,31 +480,78 @@ export const AdsService = {
   // 9. Gestão de Usuários (Admin)
   async getAllProfiles(): Promise<Profile[]> {
     const local = getLocalProfiles();
+    const deletedKeys = getDeletedProfileKeys();
+
+    // Filtra perfis locais removendo qualquer um que tenha sido excluído
+    const validLocal = local.filter(
+      (p) =>
+        !deletedKeys.has(p.id.toLowerCase().trim()) &&
+        !deletedKeys.has((p.email || "").toLowerCase().trim())
+    );
+
     if (isLiveSupabaseConfigured) {
       try {
-        const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false });
+
         if (error) {
-          console.warn("Supabase profiles indisponível, usando fallback:", error.message);
-          return local;
+          console.warn("Supabase profiles indisponível, usando fallback local:", error.message);
+          return validLocal;
         }
+
         if (data && Array.isArray(data)) {
-          // Mesclar perfis do Supabase com os locais (Supabase tem prioridade)
-          const merged: Profile[] = [...data];
-          const dbIds = new Set(data.map((p) => p.id));
-          const dbEmails = new Set(data.map((p) => (p.email || "").toLowerCase().trim()));
-          for (const lp of local) {
-            const lpEmail = (lp.email || "").toLowerCase().trim();
-            if (!dbIds.has(lp.id) && (!lpEmail || !dbEmails.has(lpEmail))) {
+          // Criar mapa de perfis locais por ID e por e-mail para mesclagem inteligente
+          const localMapById = new Map<string, Profile>();
+          const localMapByEmail = new Map<string, Profile>();
+          for (const lp of validLocal) {
+            localMapById.set(lp.id, lp);
+            if (lp.email) localMapByEmail.set(lp.email.toLowerCase().trim(), lp);
+          }
+
+          const merged: Profile[] = [];
+          const processedLocalIds = new Set<string>();
+
+          for (const dbProf of data) {
+            const dbId = dbProf.id;
+            const dbEmail = (dbProf.email || "").toLowerCase().trim();
+
+            // Se foi explicitamente deletado pelo admin, ignore
+            if (deletedKeys.has(dbId.toLowerCase().trim()) || (dbEmail && deletedKeys.has(dbEmail))) {
+              continue;
+            }
+
+            // Verificar se existe versão local editada pelo admin
+            const localVersion = localMapById.get(dbId) || (dbEmail ? localMapByEmail.get(dbEmail) : undefined);
+            if (localVersion) {
+              processedLocalIds.add(localVersion.id);
+              // Priorizar os dados locais que o admin editou
+              merged.push({
+                ...dbProf,
+                ...localVersion,
+              });
+            } else {
+              merged.push(dbProf);
+            }
+          }
+
+          // Adicionar qualquer perfil local que ainda não esteja no Supabase
+          for (const lp of validLocal) {
+            if (!processedLocalIds.has(lp.id)) {
               merged.push(lp);
             }
           }
+
+          saveLocalProfiles(merged);
           return merged;
         }
       } catch (err) {
-        console.warn("Supabase offline em getAllProfiles, usando fallback:", err);
+        console.warn("Supabase offline em getAllProfiles, usando fallback local:", err);
       }
     }
-    return local;
+
+    return validLocal;
   },
 
   // 10. Alterar Role do Usuário (Admin)
@@ -497,8 +567,14 @@ export const AdsService = {
     role?: UserRole;
   }): Promise<Profile> {
     const emailClean = (data.email || "").trim().toLowerCase();
+    const newId = "user-" + Date.now();
+
+    // Se estava na lista de deletados, reativa
+    removeDeletedProfileKey(newId);
+    removeDeletedProfileKey(emailClean);
+
     const newProfile: Profile = {
-      id: "user-" + Date.now(),
+      id: newId,
       email: data.email.trim(),
       full_name: data.full_name?.trim() || data.email.split("@")[0],
       avatar_url: data.avatar_url?.trim() || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
@@ -525,7 +601,9 @@ export const AdsService = {
 
     const finalProfile = createdFromDb || newProfile;
     const profiles = getLocalProfiles();
-    const filtered = profiles.filter((p) => p.email?.toLowerCase().trim() !== emailClean && p.id !== finalProfile.id);
+    const filtered = profiles.filter(
+      (p) => p.email?.toLowerCase().trim() !== emailClean && p.id !== finalProfile.id
+    );
     filtered.unshift(finalProfile);
     saveLocalProfiles(filtered);
     return finalProfile;
@@ -537,6 +615,9 @@ export const AdsService = {
       ...data,
       updated_at: new Date().toISOString(),
     };
+
+    removeDeletedProfileKey(userId);
+    if (data.email) removeDeletedProfileKey(data.email);
 
     let updatedFromDb: Profile | null = null;
     if (isLiveSupabaseConfigured) {
@@ -566,9 +647,10 @@ export const AdsService = {
     let finalProfile: Profile;
     if (index !== -1) {
       const existing = profiles[index];
-      finalProfile = updatedFromDb || {
+      finalProfile = {
         ...existing,
         ...changes,
+        ...(updatedFromDb || {}),
       };
       profiles[index] = finalProfile;
     } else {
@@ -604,11 +686,15 @@ export const AdsService = {
     return finalProfile;
   },
 
-  // 13. Excluir usuário e opcionalmente seus dados (Admin / Moderador)
+  // 13. Excluir usuário e seus anúncios (Admin / Moderador)
   async deleteProfile(userId: string): Promise<boolean> {
     const profiles = getLocalProfiles();
     const target = profiles.find((p) => p.id === userId);
     const targetEmail = (target?.email || "").toLowerCase().trim();
+
+    // Grava nas chaves deletadas para nunca mais reaparecer mesmo com cache do Supabase
+    addDeletedProfileKey(userId);
+    if (targetEmail) addDeletedProfileKey(targetEmail);
 
     if (isLiveSupabaseConfigured) {
       try {

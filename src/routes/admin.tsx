@@ -487,16 +487,16 @@ function AdminPage() {
           
           {/* Header Superior com Identificação e Botões de Criação Rápida */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-6">
-            <div className="flex items-center gap-3">
-              <div className="grid size-12 place-items-center rounded-2xl border border-purple-500/30 bg-purple-500/20 text-purple-300 shadow-[0_0_24px_-4px_rgba(168,85,247,0.35)]">
+            <div className="flex items-center gap-3.5">
+              <div className="grid size-12 place-items-center rounded-2xl border border-purple-500/30 bg-purple-500/20 text-purple-300 shadow-[0_0_24px_-4px_rgba(168,85,247,0.35)] shrink-0">
                 {role === "admin" ? <Crown className="size-6" /> : <ShieldCheck className="size-6" />}
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-bold text-foreground">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
                     Central Administrativa
                   </h1>
-                  <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-300">
+                  <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold text-purple-300 whitespace-nowrap">
                     ADMIN TOTAL
                   </span>
                 </div>
@@ -572,30 +572,6 @@ function AdminPage() {
             <div className="mt-4 flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/10 p-3.5 text-xs text-red-400 shadow-lg animate-in fade-in slide-in-from-top-2">
               <AlertTriangle className="size-4 shrink-0" />
               <span className="font-semibold">{actionErrorMsg}</span>
-            </div>
-          )}
-
-          {isSupabaseEgressExceeded && (
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-300 shadow-lg animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="size-5 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold text-amber-200 text-sm">
-                    Supabase: Cota de Transferência (Egress) Atingida (HTTP 402)
-                  </p>
-                  <p className="mt-1 text-amber-200/80 leading-relaxed text-xs">
-                    O projeto Supabase teve a transferência pausada pelo provedor por atingir a cota gratuita. Para que os dados sincronizem instantaneamente na nuvem, acesse o painel da sua organização no Supabase e ajuste o Spend Cap ou realize o upgrade do plano.
-                  </p>
-                </div>
-              </div>
-              <a
-                href="https://supabase.com/dashboard/project/vpxpfbacysibxlfjayks/settings/billing"
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 rounded-xl bg-amber-500/20 border border-amber-500/40 px-3.5 py-2 font-bold text-amber-200 hover:bg-amber-500/30 transition-all text-center"
-              >
-                Abrir Billing no Supabase ↗
-              </a>
             </div>
           )}
 

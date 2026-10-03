@@ -84,22 +84,43 @@ function getLocalProfiles(): Profile[] {
     }
   } catch (e) {}
 
-  // Garantir que administradores mestres sempre constem como admin
-  const adminEmails = [
-    "malacarogeriojr@gmail.com",
-    "rogeriomalaquiasjr@gmail.com",
-    "admin@shop7.com",
+  // Garantir que administradores mestres sempre constem como admin e estejam presentes
+  const deletedKeys = getDeletedProfileKeys();
+  const defaultAdmins: Profile[] = [
+    {
+      id: "admin-malaca-root",
+      email: "malacarogeriojr@gmail.com",
+      full_name: "malaca",
+      avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+      role: "admin",
+      created_at: "2026-10-01T00:00:00.000Z",
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "admin-rogerio-root",
+      email: "rogeriomalaquiasjr@gmail.com",
+      full_name: "Rogério Malaquias",
+      avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+      role: "admin",
+      created_at: "2026-10-01T00:00:00.000Z",
+      updated_at: new Date().toISOString(),
+    },
   ];
-  let updatedAny = false;
-  for (const admEmail of adminEmails) {
-    const adminProf = list.find((p) => p.email?.toLowerCase().trim() === admEmail);
-    if (adminProf && adminProf.role !== "admin") {
-      adminProf.role = "admin";
-      updatedAny = true;
+
+  for (const defAdm of defaultAdmins) {
+    const isDeleted =
+      deletedKeys.has(defAdm.id.toLowerCase().trim()) ||
+      deletedKeys.has(defAdm.email.toLowerCase().trim());
+    if (isDeleted) continue;
+
+    const existingIndex = list.findIndex(
+      (p) => p.email?.toLowerCase().trim() === defAdm.email.toLowerCase().trim()
+    );
+    if (existingIndex >= 0) {
+      list[existingIndex].role = "admin";
+    } else {
+      list.push(defAdm);
     }
-  }
-  if (updatedAny) {
-    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
   }
 
   return list;

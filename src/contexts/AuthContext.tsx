@@ -430,15 +430,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 3. Fallback assistido para demonstração e ambientes isolados
-      const defaultGoogleUser: GoogleUserData = {
-        id: "google-member-" + Date.now(),
-        email: "usuario.google@gmail.com",
-        full_name: "Membro Google",
-        avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-        email_verified: true,
-      };
-      await loginWithGoogleData(defaultGoogleUser);
+      // Se chegar aqui e nenhuma autenticação retornou, lance erro.
+      throw new Error("Não foi possível autenticar com o Google no momento.");
     } finally {
       setIsLoading(false);
     }

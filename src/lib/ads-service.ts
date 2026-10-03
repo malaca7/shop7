@@ -4,110 +4,9 @@ const LOCAL_ADS_KEY = "shop7_local_ads_v1";
 const LOCAL_PROFILES_KEY = "shop7_local_profiles_v1";
 
 // Mock inicial realista para demonstração imediata
-const INITIAL_DEMO_ADS: Ad[] = [
-  {
-    id: "ad-demo-1",
-    user_id: "user-demo-1",
-    title: "Conta Valorant Imortal 3 · Vandal Vingança de Gaia + Passes",
-    description: "Conta com nível 184, 4 passes completos, skins premium e e-mail de criação liberado para troca imediata.",
-    category: "contas",
-    type: "item",
-    price: 349.90,
-    images: [
-      "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=60",
-    ],
-    stock: 1,
-    additional_info: "Acesso total via e-mail. Troca de dados guiada pela mediação SHOP7.",
-    status: "approved",
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    seller_name: "ShadowGamer",
-  },
-  {
-    id: "ad-demo-2",
-    user_id: "user-demo-2",
-    title: "Setup de Servidor Discord para Comunidades & Streamers",
-    description: "Configuração completa de bots, canais de voz temporários, automação de cargos, logs e proteção anti-raid.",
-    category: "servicos",
-    type: "servico",
-    price: 120.00,
-    images: [
-      "https://images.unsplash.com/photo-1614680376593-902f749f7ffc?w=800&auto=format&fit=crop&q=60",
-    ],
-    stock: 10,
-    additional_info: "Entrega em até 48h com suporte de 7 dias após a finalização.",
-    status: "pending",
-    created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 4).toISOString(),
-    seller_name: "PixelCraft Design",
-  },
-  {
-    id: "ad-demo-3",
-    user_id: "user-demo-3",
-    title: "Headset Gamer Sem Fio 7.1 Surround · Zero Latência",
-    description: "Headset novo, lacrado na caixa. Microfone removível com cancelamento de ruído, bateria de 40 horas.",
-    category: "produtos-fisicos",
-    type: "item",
-    price: 489.00,
-    images: [
-      "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&auto=format&fit=crop&q=60",
-    ],
-    stock: 3,
-    additional_info: "Envio em até 24h úteis via Sedex com código de rastreio nacional.",
-    status: "pending",
-    created_at: new Date(Date.now() - 3600000 * 1).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 1).toISOString(),
-    seller_name: "CyberStore SP",
-  },
-];
+const INITIAL_DEMO_ADS: Ad[] = [];
 
-const INITIAL_DEMO_PROFILES: Profile[] = [
-  {
-    id: "user-demo-1",
-    email: "usuario@shop7.com",
-    full_name: "Carlos Eduardo",
-    avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-    role: "user",
-    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-  },
-  {
-    id: "user-demo-2",
-    email: "mariana.costa@gmail.com",
-    full_name: "Mariana Costa",
-    avatar_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80",
-    role: "user",
-    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 15).toISOString(),
-  },
-  {
-    id: "mod-demo-1",
-    email: "moderador@shop7.com",
-    full_name: "Beatriz Mod",
-    avatar_url: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=120&auto=format&fit=crop&q=80",
-    role: "moderator",
-    created_at: new Date(Date.now() - 86400000 * 45).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 45).toISOString(),
-  },
-  {
-    id: "admin-demo-1",
-    email: "admin@shop7.com",
-    full_name: "Administrador SHOP7",
-    avatar_url: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=120&auto=format&fit=crop&q=80",
-    role: "admin",
-    created_at: new Date(Date.now() - 86400000 * 60).toISOString(),
-    updated_at: new Date(Date.now() - 86400000 * 60).toISOString(),
-  },
-  {
-    id: "admin-malaca-1",
-    email: "malacarogeriojr@gmail.com",
-    full_name: "Rogério Malaquias Jr",
-    avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80",
-    role: "admin",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
+const INITIAL_DEMO_PROFILES: Profile[] = [];
 
 function getLocalAds(): Ad[] {
   if (typeof window === "undefined") return INITIAL_DEMO_ADS;
@@ -168,20 +67,9 @@ function getLocalProfiles(): Profile[] {
     }
   } catch (e) {}
 
-  // Garantir que malacarogeriojr@gmail.com sempre conste como admin
+  // Garantir que malacarogeriojr@gmail.com sempre conste como admin se existir
   const malacaProfile = list.find((p) => p.email?.toLowerCase().trim() === "malacarogeriojr@gmail.com");
-  if (!malacaProfile) {
-    list.unshift({
-      id: "admin-malaca-1",
-      email: "malacarogeriojr@gmail.com",
-      full_name: "Rogério Malaquias Jr",
-      avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80",
-      role: "admin",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
-  } else if (malacaProfile.role !== "admin") {
+  if (malacaProfile && malacaProfile.role !== "admin") {
     malacaProfile.role = "admin";
     localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(list));
   }

@@ -131,25 +131,7 @@ function AuthPage() {
     }
   };
 
-  // Atalhos rápidos para testar papéis instantaneamente
-  const handleQuickDemo = async (role: "user" | "mod" | "admin" | "google") => {
-    if (role === "user") {
-      await signInWithEmail("usuario@shop7.com", "123456");
-    } else if (role === "mod") {
-      await signInWithEmail("moderador@shop7.com", "123456");
-    } else if (role === "admin") {
-      await signInWithEmail("malacarogeriojr@gmail.com", "123456");
-    } else if (role === "google") {
-      await loginWithGoogleData({
-        id: "google-member-quick",
-        email: "membro.google@gmail.com",
-        full_name: "Google Membro",
-        avatar_url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-        email_verified: true,
-      });
-    }
-    navigate({ to: "/minha-conta" });
-  };
+
 
   return (
     <div className="dark min-h-screen bg-[#070709] text-foreground flex flex-col justify-between">
@@ -327,42 +309,7 @@ function AuthPage() {
               </button>
             </form>
 
-            {/* Acesso Rápido de Demonstração / Funções Instantâneas */}
-            <div className="mt-6 pt-4 border-t border-white/[0.06] text-center">
-              <p className="text-[11px] font-semibold text-muted-foreground flex items-center justify-center gap-1">
-                <Sparkles className="size-3 text-primary" /> Testar Funções Instantâneas:
-              </p>
-              <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo("user")}
-                  className="rounded-lg border border-white/[0.06] bg-[#14151a] px-2.5 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:border-white/20"
-                >
-                  👤 Membro
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo("google")}
-                  className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[10px] font-medium text-blue-400 hover:bg-blue-500/20"
-                >
-                  🌐 Google
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo("mod")}
-                  className="rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-medium text-primary hover:bg-primary/20"
-                >
-                  🛡️ Moderador
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo("admin")}
-                  className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-[10px] font-medium text-purple-300 hover:bg-purple-500/20"
-                >
-                  👑 Admin
-                </button>
-              </div>
-            </div>
+
 
             {/* Selo de Proteção */}
             <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/70">

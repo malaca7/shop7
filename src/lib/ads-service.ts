@@ -496,16 +496,18 @@ export const AdsService = {
     avatar_url?: string | null;
     role?: UserRole;
   }): Promise<Profile> {
+    const emailClean = (data.email || "").trim().toLowerCase();
     const newProfile: Profile = {
       id: "user-" + Date.now(),
       email: data.email.trim(),
       full_name: data.full_name?.trim() || data.email.split("@")[0],
-      avatar_url: data.avatar_url || null,
+      avatar_url: data.avatar_url?.trim() || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
       role: data.role || "user",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
+    let createdFromDb: Profile | null = null;
     if (isLiveSupabaseConfigured) {
       try {
         const { data: dbData, error } = await supabase
@@ -514,20 +516,19 @@ export const AdsService = {
           .select()
           .single();
         if (!error && dbData) {
-          const profiles = getLocalProfiles();
-          profiles.unshift(dbData);
-          saveLocalProfiles(profiles);
-          return dbData;
+          createdFromDb = dbData;
         }
       } catch (err) {
         console.warn("Supabase indisponível em createProfile, salvando localmente:", err);
       }
     }
 
+    const finalProfile = createdFromDb || newProfile;
     const profiles = getLocalProfiles();
-    profiles.unshift(newProfile);
-    saveLocalProfiles(profiles);
-    return newProfile;
+    const filtered = profiles.filter((p) => p.email?.toLowerCase().trim() !== emailClean && p.id !== finalProfile.id);
+    filtered.unshift(finalProfile);
+    saveLocalProfiles(filtered);
+    return finalProfile;
   },
 
   // 12. Atualizar qualquer perfil por completo (Admin / Moderador)
@@ -555,37 +556,84 @@ export const AdsService = {
     }
 
     const profiles = getLocalProfiles();
-    const index = profiles.findIndex((p) => p.id === userId);
+    const normalizedEmail = (data.email || "").toLowerCase().trim();
+    const index = profiles.findIndex(
+      (p) =>
+        p.id === userId ||
+        (normalizedEmail && p.email?.toLowerCase().trim() === normalizedEmail)
+    );
+
+    let finalProfile: Profile;
     if (index !== -1) {
       const existing = profiles[index];
-      const updatedProf: Profile = updatedFromDb || {
+      finalProfile = updatedFromDb || {
         ...existing,
         ...changes,
       };
-      profiles[index] = updatedProf;
-      saveLocalProfiles(profiles);
-      return updatedProf;
+      profiles[index] = finalProfile;
+    } else {
+      finalProfile = updatedFromDb || {
+        id: userId,
+        email: data.email || "usuario@shop7.com",
+        full_name: data.full_name || null,
+        avatar_url: data.avatar_url || null,
+        role: data.role || "user",
+        created_at: new Date().toISOString(),
+        ...changes,
+      };
+      profiles.unshift(finalProfile);
     }
 
-    if (updatedFromDb) return updatedFromDb;
-    throw new Error("Usuário não encontrado");
+    saveLocalProfiles(profiles);
+
+    // Sincronizar também a sessão ativa se for o usuário logado
+    try {
+      const activeSessionRaw = localStorage.getItem("shop7_active_auth_session_v1");
+      if (activeSessionRaw) {
+        const parsed = JSON.parse(activeSessionRaw);
+        if (
+          parsed?.user?.id === userId ||
+          (parsed?.user?.email && parsed.user.email.toLowerCase().trim() === finalProfile.email?.toLowerCase().trim())
+        ) {
+          parsed.profile = { ...parsed.profile, ...finalProfile };
+          localStorage.setItem("shop7_active_auth_session_v1", JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {}
+
+    return finalProfile;
   },
 
   // 13. Excluir usuário e opcionalmente seus dados (Admin / Moderador)
   async deleteProfile(userId: string): Promise<boolean> {
+    const profiles = getLocalProfiles();
+    const target = profiles.find((p) => p.id === userId);
+    const targetEmail = (target?.email || "").toLowerCase().trim();
+
     if (isLiveSupabaseConfigured) {
       try {
         await supabase.from("profiles").delete().eq("id", userId);
+        if (targetEmail) {
+          await supabase.from("profiles").delete().eq("email", targetEmail);
+        }
       } catch (err) {
         console.warn("Supabase indisponível em deleteProfile:", err);
       }
     }
 
-    const profiles = getLocalProfiles().filter((p) => p.id !== userId);
-    saveLocalProfiles(profiles);
+    const filteredProfiles = profiles.filter(
+      (p) =>
+        p.id !== userId &&
+        (!targetEmail || p.email?.toLowerCase().trim() !== targetEmail)
+    );
+    saveLocalProfiles(filteredProfiles);
 
     // Remove os anúncios associados ao usuário excluído
-    const ads = getLocalAds().filter((a) => a.user_id !== userId);
+    const ads = getLocalAds().filter(
+      (a) =>
+        a.user_id !== userId &&
+        (!target?.full_name || a.seller_name !== target.full_name)
+    );
     saveLocalAds(ads);
 
     return true;

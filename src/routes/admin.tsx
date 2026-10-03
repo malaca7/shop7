@@ -247,13 +247,13 @@ function AdminPage() {
   // Alterar Role do Usuário
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     if (role !== "admin") {
-      alert("Apenas administradores podem alterar papéis.");
+      showFeedback("Apenas administradores podem alterar papéis de usuários.", true);
       return;
     }
     try {
-      await AdsService.updateUserRole(userId, newRole);
-      showFeedback(`Nível de acesso atualizado com sucesso para ${newRole.toUpperCase()}.`);
-      loadData();
+      const updated = await AdsService.updateUserRole(userId, newRole);
+      showFeedback(`Nível de acesso de "${updated.full_name || updated.email}" atualizado para ${newRole.toUpperCase()}.`);
+      await loadData();
     } catch (err: any) {
       showFeedback(err?.message || "Erro ao atualizar permissão.", true);
     }
@@ -262,20 +262,24 @@ function AdminPage() {
   // Excluir Usuário
   const handleDeleteUser = async (targetUser: Profile) => {
     if (role !== "admin") {
-      alert("Apenas administradores podem excluir usuários.");
+      showFeedback("Apenas administradores podem excluir usuários.", true);
       return;
     }
-    if (targetUser.id === user?.id) {
-      alert("Você não pode excluir sua própria conta de administrador ativa.");
+    const isCurrentActive =
+      targetUser.id === user?.id ||
+      (user?.email && targetUser.email.toLowerCase().trim() === user.email.toLowerCase().trim());
+
+    if (isCurrentActive) {
+      showFeedback("Você não pode excluir sua própria conta de administrador ativa.", true);
       return;
     }
-    if (!confirm(`Atenção: Excluir o usuário "${targetUser.full_name || targetUser.email}" removerá a conta e seus anúncios associados. Confirmar exclusão?`)) {
+    if (!window.confirm(`Atenção: Excluir o usuário "${targetUser.full_name || targetUser.email}" removerá a conta e seus anúncios associados. Confirmar exclusão?`)) {
       return;
     }
     try {
       await AdsService.deleteProfile(targetUser.id);
       showFeedback(`Usuário "${targetUser.email}" e seus anúncios foram excluídos com sucesso.`);
-      loadData();
+      await loadData();
     } catch (err: any) {
       showFeedback(err?.message || "Erro ao excluir usuário.", true);
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, User, Mail, Shield, Crown, Sparkles, Image, Trash2 } from "lucide-react";
+import { X, User, Mail, Shield, Crown, Sparkles, Image, Check } from "lucide-react";
 import { AdsService } from "@/lib/ads-service";
 import type { Profile, UserRole } from "@/lib/supabase";
 
@@ -9,6 +9,14 @@ interface UserModalProps {
   onSuccess: (profile: Profile) => void;
   initialProfile?: Profile | null;
 }
+
+const PRESET_AVATARS = [
+  { id: "1", label: "Gamer 1", url: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=160&auto=format&fit=crop&q=80" },
+  { id: "2", label: "Gamer 2", url: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=160&auto=format&fit=crop&q=80" },
+  { id: "3", label: "Gamer 3", url: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=160&auto=format&fit=crop&q=80" },
+  { id: "4", label: "Gamer 4", url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=160&auto=format&fit=crop&q=80" },
+  { id: "5", label: "Gamer 5", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=160&auto=format&fit=crop&q=80" },
+];
 
 export function UserModal({
   isOpen,
@@ -33,7 +41,7 @@ export function UserModal({
       setFullName("");
       setEmail("");
       setRole("user");
-      setAvatarUrl("");
+      setAvatarUrl(PRESET_AVATARS[0].url);
     }
     setError(null);
   }, [initialProfile, isOpen]);
@@ -44,6 +52,11 @@ export function UserModal({
     e.preventDefault();
     if (!email.trim()) {
       setError("Por favor, informe o e-mail do usuário.");
+      return;
+    }
+
+    if (!email.includes("@") || !email.includes(".")) {
+      setError("Por favor, informe um endereço de e-mail válido.");
       return;
     }
 
@@ -72,7 +85,7 @@ export function UserModal({
       }
       onClose();
     } catch (err: any) {
-      setError(err?.message || "Erro ao salvar usuário.");
+      setError(err?.message || "Erro ao salvar usuário no sistema.");
     } finally {
       setIsSubmitting(false);
     }
@@ -134,7 +147,7 @@ export function UserModal({
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Ex: Carlos Eduardo ou Empresa LTDA"
+                placeholder="Ex: Carlos Eduardo ou Loja Gamer"
                 className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#121317] pl-3.5 pr-4 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
               />
             </div>
@@ -190,12 +203,41 @@ export function UserModal({
             </div>
           </div>
 
-          {/* Avatar URL */}
+          {/* Avatares Rápidos */}
+          <div>
+            <label className="text-xs font-semibold text-foreground">Escolher Avatar Rápido</label>
+            <div className="mt-2 flex items-center gap-2">
+              {PRESET_AVATARS.map((preset) => {
+                const isSelected = avatarUrl === preset.url;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setAvatarUrl(preset.url)}
+                    className={`relative size-10 rounded-xl overflow-hidden border transition-all ${
+                      isSelected
+                        ? "border-primary ring-2 ring-primary/40 scale-105"
+                        : "border-white/10 hover:border-white/30 opacity-70 hover:opacity-100"
+                    }`}
+                  >
+                    <img src={preset.url} alt={preset.label} className="size-full object-cover" />
+                    {isSelected && (
+                      <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                        <Check className="size-3 text-white stroke-[3]" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Avatar URL Customizado */}
           <div>
             <label className="text-xs font-semibold text-foreground flex items-center justify-between">
-              <span>URL da Foto de Perfil / Avatar (opcional)</span>
+              <span>Ou cole a URL da Foto de Perfil (opcional)</span>
               {avatarUrl && (
-                <span className="text-[10px] text-primary">Prévia disponível</span>
+                <span className="text-[10px] text-primary">Prévia ativa</span>
               )}
             </label>
             <div className="mt-1.5 flex gap-2 items-center">
@@ -203,7 +245,7 @@ export function UserModal({
                 type="url"
                 value={avatarUrl}
                 onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://images.unsplash.com/... (link de imagem)"
+                placeholder="https://images.unsplash.com/... (link direto)"
                 className="h-10 flex-1 rounded-xl border border-white/[0.08] bg-[#121317] px-3.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none"
               />
               {avatarUrl && (
